@@ -81,7 +81,6 @@ class MainActivity : ComponentActivity() {
                                     listOf(Color(0xFF171D39), NovaBackground, Color(0xFF090D18))
                                 )
                             )
-                            .verticalScroll(rememberScrollState())
                             .padding(horizontal = 20.dp, vertical = 18.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp)
                     ) {
@@ -201,6 +200,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(18.dp)
+                        ) {
                         Text(
                             "WHAT CAN NOVA DO?",
                             color = NovaMuted,
@@ -257,6 +263,7 @@ class MainActivity : ComponentActivity() {
                             style = MaterialTheme.typography.bodySmall
                         )
                         Spacer(Modifier.height(10.dp))
+                        }
                     }
                 }
             }
