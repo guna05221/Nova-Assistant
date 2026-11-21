@@ -9,11 +9,31 @@ import java.util.Locale
 object NovaCommand {
     fun execute(context: Context, raw: String) {
         val command = raw.lowercase(Locale.ROOT).trim()
+            .replace(Regex("[.!?,]+$"), "").replace(Regex("\\s+"), " ")
+        val homeCommands = setOf(
+            "go home", "go to home", "go to the home", "go to home page",
+            "go to the home page", "go to home screen", "go to the home screen",
+            "go to my home screen", "home", "home page", "home screen",
+            "take me home", "take me to home", "take me to the home screen",
+            "return home", "return to home", "return to the home screen",
+            "open home screen", "show home screen"
+        )
         when {
             command == "open settings" || command == "settings" ->
                 context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             command == "go back" -> NovaAccessibilityService.instance?.back()
-            command == "go home" -> NovaAccessibilityService.instance?.home()
+            command in homeCommands -> {
+                val accessibility = NovaAccessibilityService.instance
+                if (accessibility != null) {
+                    accessibility.home()
+                } else {
+                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_HOME)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(homeIntent)
+                }
+            }
             command == "scroll down" -> NovaAccessibilityService.instance?.scroll(false)
             command == "scroll up" -> NovaAccessibilityService.instance?.scroll(true)
             command.startsWith("search online for ") -> search(context, command.removePrefix("search online for "))
