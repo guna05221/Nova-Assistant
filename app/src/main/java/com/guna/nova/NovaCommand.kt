@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.widget.Toast
 import java.util.Locale
 
 /**
@@ -127,6 +128,9 @@ object NovaCommand {
     private fun say(context: Context, message: String) {
         context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
             .putString("status", message).putBoolean("running", true).apply()
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            Toast.makeText(context.applicationContext, message, Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun openApp(context: Context, label: String): Boolean {
