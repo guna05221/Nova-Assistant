@@ -194,7 +194,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    "When listening is on, say “Hey Nova”.",
+                                    "Listening stays on. Speak commands directly—no wake word needed.",
                                     color = NovaMuted,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -259,7 +259,7 @@ class MainActivity : ComponentActivity() {
                             Text("Nova app settings")
                         }
                         Text(
-                            "Nova runs wake-word detection on your phone. Online search opens your browser; writing prompts can be sent to an app you choose.",
+                            "Nova listens continuously after you start it. Long-press Volume Up to start listening from anywhere.",
                             color = NovaMuted,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -305,12 +305,12 @@ private fun friendlyStatus(raw: String): String {
     return when {
         value.contains("model load failed") -> "Voice model could not load. Check the model setup."
         value.contains("microphone") && value.contains("error") -> "Microphone problem: $raw"
-        value.contains("active; say hey nova") -> "Listening for the wake phrase."
+        value.contains("listening continuously") || value.startsWith("heard:") -> "Nova is listening for your next command."
         value.contains("model loaded") -> "Voice model loaded. Starting microphone…"
         value.contains("service started") -> "Starting the offline voice engine…"
         value.contains("stopped unexpectedly") -> "The listening service stopped. Tap Start listening to retry."
         value.contains("stopped") -> "Listening is off."
         value.contains("failed") -> raw
-        else -> "Tap Start listening, then say “Hey Nova”."
+        else -> "Tap Start listening and speak your command directly."
     }
 }
