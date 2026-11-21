@@ -50,7 +50,7 @@ class WakeWordService : Service(), RecognitionListener {
                     model = loaded
                     try {
                         report("Offline model loaded; opening microphone…")
-                        recognizer = Recognizer(loaded, 16000.0f, "[\\"hey nova\\"]")
+                        recognizer = Recognizer(loaded, 16000.0f, """["hey nova"]""")
                         speech = SpeechService(recognizer, 16000.0f)
                         val started = speech?.startListening(this) ?: false
                         if (started) report("Microphone active; say Hey Nova")
