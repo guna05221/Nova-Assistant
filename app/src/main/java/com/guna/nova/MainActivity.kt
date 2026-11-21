@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     private val permissions = registerForActivityResult(
@@ -37,6 +38,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             var running by remember { mutableStateOf(false) }
             var status by remember { mutableStateOf("Ready when you are") }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    val prefs = getSharedPreferences("nova_diagnostics", MODE_PRIVATE)
+                    status = prefs.getString("status", "Ready when you are") ?: "Ready when you are"
+                    running = prefs.getBoolean("running", false)
+                    delay(500)
+                }
+            }
             MaterialTheme(colorScheme = darkColorScheme(
                 primary = Color(0xFF9D8CFF), secondary = Color(0xFF62E8E0),
                 background = Color(0xFF080A14), surface = Color(0xFF15182A)
@@ -64,14 +73,18 @@ class MainActivity : ComponentActivity() {
                         Spacer(Modifier.height(26.dp))
                         Button(onClick = {
                             if (!running) {
-                                ContextCompat.startForegroundService(this@MainActivity,
-                                    Intent(this@MainActivity, WakeWordService::class.java))
-                                running = true
-                                status = "Listening locally for Hey Nova"
+                                status = "Requesting microphone service…"
+                                try {
+                                    ContextCompat.startForegroundService(this@MainActivity,
+                                        Intent(this@MainActivity, WakeWordService::class.java))
+                                } catch (e: Exception) {
+                                    getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
+                                        .putBoolean("running", false)
+                                        .putString("status", "Service start failed: ${e.javaClass.simpleName}: ${e.message}")
+                                        .apply()
+                                }
                             } else {
                                 stopService(Intent(this@MainActivity, WakeWordService::class.java))
-                                running = false
-                                status = "Paused"
                             }
                         }, modifier = Modifier.fillMaxWidth()) {
                             Text(if (running) "Stop listening" else "Start listening")
@@ -83,7 +96,7 @@ class MainActivity : ComponentActivity() {
                             Spacer(Modifier.width(8.dp))
                             Text("Enable accessibility control")
                         }
-                        Text("Wake phrase detection runs locally after you add the Vosk model.",
+                        Text("Nova reports microphone and model startup status here.",
                             color = Color(0xFF9299B7), style = MaterialTheme.typography.bodySmall)
                     }
                 }
