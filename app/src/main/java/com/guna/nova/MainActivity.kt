@@ -337,7 +337,8 @@ private fun friendlyStatus(raw: String): String {
         value.startsWith("copy failed:") || value.startsWith("copied") || value.startsWith("pasted") || value.startsWith("i couldn't paste") -> raw
         value.contains("model load failed") -> "Voice model could not load. Check the model setup."
         value.contains("microphone") && value.contains("error") -> "Microphone problem: $raw"
-        value.contains("listening for tamil") || value.startsWith("heard:") -> "Nova is listening for your next command."
+        value.startsWith("heard:") -> raw
+        value.contains("listening for tamil") -> "Nova is listening for your next command."
         value.contains("model loaded") -> "Voice model loaded. Starting microphone…"
         value.contains("service started") -> "Starting the offline voice engine…"
         value.contains("stopped unexpectedly") -> "The listening service stopped. Tap Start listening to retry."
