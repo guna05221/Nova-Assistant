@@ -158,6 +158,37 @@ class MainActivity : ComponentActivity() {
                                     color = NovaMuted
                                 )
                                 Spacer(Modifier.height(18.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        if (!running) {
+                                            try {
+                                                ContextCompat.startForegroundService(
+                                                    this@MainActivity,
+                                                    Intent(this@MainActivity, WakeWordService::class.java).apply {
+                                                        action = WakeWordService.ACTION_ENROLL
+                                                    }
+                                                )
+                                            } catch (e: Exception) {
+                                                getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
+                                                    .putBoolean("running", false)
+                                                    .putString("status", "Voice setup failed: ${e.message}").apply()
+                                            }
+                                        }
+                                    },
+                                    enabled = !running,
+                                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NovaMint)
+                                ) {
+                                    Text("Set up my voice", fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "First-time setup: speak naturally for 8 seconds. Other voices will be ignored after enrolment.",
+                                    color = NovaMuted,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Spacer(Modifier.height(12.dp))
                                 Button(
                                     onClick = {
                                         if (!running) {
