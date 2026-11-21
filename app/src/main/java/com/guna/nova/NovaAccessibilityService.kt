@@ -57,8 +57,18 @@ class NovaAccessibilityService : AccessibilityService() {
         val candidates = mutableListOf<String>()
         fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
             if (node == null || !node.isVisibleToUser) return
-            val value = (node.text?.toString() ?: node.contentDescription?.toString()).orEmpty().trim()
-            if (value.isNotBlank() && !node.isEditable &&
+            // Use actual visible text only. contentDescription often contains control
+            // hints such as "Voice message, Button. Double tap and hold to record".
+            val value = node.text?.toString()?.trim().orEmpty()
+            val className = node.className?.toString().orEmpty()
+            val isTextView = className.endsWith("TextView")
+            val isControlHint = value.contains("double tap", ignoreCase = true) ||
+                value.contains("slide left", ignoreCase = true) ||
+                value.contains("slide up", ignoreCase = true) ||
+                value.contains("release to send", ignoreCase = true) ||
+                value.contains("hold to record", ignoreCase = true) ||
+                value.equals("voice message", ignoreCase = true)
+            if (value.isNotBlank() && isTextView && !node.isEditable && !isControlHint &&
                 value.length > 1 && value.length < 2000 &&
                 !value.matches(Regex("\\d{1,2}:\\d{2}(:\\d{2})?"))) {
                 candidates.add(value)
