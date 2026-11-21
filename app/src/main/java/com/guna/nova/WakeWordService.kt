@@ -5,29 +5,32 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import org.json.JSONObject
 import org.vosk.Model
 import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener
 import org.vosk.android.SpeechService
 import org.vosk.android.StorageService
-import java.io.IOException
 
 class WakeWordService : Service(), RecognitionListener {
     private var speech: SpeechService? = null
     private var model: Model? = null
     private var recognizer: Recognizer? = null
+    private val handler = Handler(Looper.getMainLooper())
     private val channelId = "nova_listener"
     private val notificationId = 41
+    @Volatile private var active = false
 
-    private fun report(message: String, active: Boolean = true) {
-        Log.i("NovaWakeWord", message)
+    private fun report(message: String, running: Boolean = true) {
+        Log.i("NovaVoice", message)
         getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
-            .putString("status", message).putBoolean("running", active).apply()
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(notificationId, notification(message))
+            .putString("status", message).putBoolean("running", running).apply()
+        getSystemService(NotificationManager::class.java).notify(notificationId, notification(message))
     }
 
     private fun notification(message: String) =
@@ -43,18 +46,15 @@ class WakeWordService : Service(), RecognitionListener {
         super.onCreate()
         createChannel()
         try {
-            startForeground(notificationId, notification("Starting microphone service…"))
-            report("Service started; preparing offline voice model…")
+            startForeground(notificationId, notification("Starting continuous voice listening…"))
+            report("Loading offline voice model…")
             StorageService.unpack(this, "model", "model",
                 { loaded ->
                     model = loaded
                     try {
-                        report("Offline model loaded; opening microphone…")
-                        recognizer = Recognizer(loaded, 16000.0f, """["hey nova", "dai"]""")
-                        speech = SpeechService(recognizer, 16000.0f)
-                        val started = speech?.startListening(this) ?: false
-                        if (started) report("Microphone active; say Hey Nova or Dai")
-                        else report("Vosk could not start microphone capture", false)
+                        recognizer = Recognizer(loaded, 16000.0f)
+                        active = true
+                        startRecognition()
                     } catch (e: Exception) {
                         report("Voice startup error: ${e.javaClass.simpleName}: ${e.message}", false)
                         stopSelf()
@@ -70,63 +70,67 @@ class WakeWordService : Service(), RecognitionListener {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+    private fun startRecognition() {
+        if (!active || recognizer == null) return
+        try {
+            speech?.stop()
+            speech = SpeechService(recognizer, 16000.0f)
+            val started = speech?.startListening(this) ?: false
+            if (started) report("Listening continuously. Speak a command anytime.")
+            else report("Could not start microphone capture", false)
+        } catch (e: Exception) {
+            report("Microphone restart failed: ${e.message}", false)
+            handler.postDelayed({ startRecognition() }, 700)
+        }
+    }
+
+    private fun restartRecognition() {
+        if (!active) return
+        handler.removeCallbacksAndMessages(null)
+        handler.postDelayed({ startRecognition() }, 350)
+    }
+
+    private fun processRecognizedText(hypothesis: String?) {
+        if (!active || hypothesis.isNullOrBlank()) return
+        val text = try { JSONObject(hypothesis).optString("text", "") } catch (_: Exception) { "" }
+        if (text.isNotBlank()) {
+            report("Heard: $text")
+            NovaCommand.execute(this, text)
+        }
+        restartRecognition()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onResult(hypothesis: String?) {
-        Log.d("NovaWakeWord", "Final: $hypothesis")
-        if (hypothesis?.let { it.contains("hey nova", ignoreCase = true) || it.contains("dai", ignoreCase = true) } == true) {
-            report("Wake phrase detected; opening command listener…")
-            speech?.stop()
-            NovaCommand.capture(this)
-        }
+        Log.d("NovaVoice", "Recognized: $hypothesis")
+        processRecognizedText(hypothesis)
     }
 
-    override fun onPartialResult(hypothesis: String?) {
-        Log.d("NovaWakeWord", "Partial: $hypothesis")
-        if (hypothesis?.let { it.contains("hey nova", ignoreCase = true) || it.contains("dai", ignoreCase = true) } == true) {
-            report("Wake phrase detected; opening command listener…")
-            speech?.stop()
-            NovaCommand.capture(this)
-        }
-    }
-
+    override fun onPartialResult(hypothesis: String?) {}
     override fun onFinalResult(hypothesis: String?) {
-        Log.d("NovaWakeWord", "Final result: $hypothesis")
+        Log.d("NovaVoice", "Final: $hypothesis")
     }
 
     override fun onError(exception: Exception?) {
-        report("Microphone recognition error: ${exception?.javaClass?.simpleName}: ${exception?.message}", false)
+        report("Recognition issue: ${exception?.message ?: "retrying"}")
+        restartRecognition()
     }
 
     override fun onTimeout() {
-        try {
-            val started = speech?.startListening(this) ?: false
-            if (started) report("Microphone active; say Hey Nova")
-            else report("Microphone listener timed out and could not restart", false)
-        } catch (e: Exception) {
-            report("Microphone restart failed: ${e.message}", false)
-        }
+        restartRecognition()
     }
 
     override fun onDestroy() {
+        active = false
+        handler.removeCallbacksAndMessages(null)
         speech?.stop()
         recognizer?.close()
         model?.close()
-        val prefs = getSharedPreferences("nova_diagnostics", MODE_PRIVATE)
-        val oldStatus = prefs.getString("status", "") ?: ""
-        // Preserve the real startup/recognition error instead of hiding it.
-        if (oldStatus == "Microphone active; say Hey Nova" ||
-            oldStatus.startsWith("Service started") ||
-            oldStatus.startsWith("Offline model loaded")) {
-            prefs.edit().putBoolean("running", false)
-                .putString("status", "Service stopped unexpectedly. Check the latest Nova notification.")
-                .apply()
-        } else {
-            prefs.edit().putBoolean("running", false).apply()
-        }
+        getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
+            .putBoolean("running", false).putString("status", "Listening stopped.").apply()
         stopForeground(STOP_FOREGROUND_REMOVE)
         getSystemService(NotificationManager::class.java).cancel(notificationId)
-        Log.i("NovaWakeWord", "Service destroyed; previous status=$oldStatus")
         super.onDestroy()
     }
 
