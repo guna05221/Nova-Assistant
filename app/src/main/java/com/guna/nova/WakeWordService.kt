@@ -83,7 +83,7 @@ class WakeWordService : Service(), RecognitionListener {
 
     override fun onPartialResult(hypothesis: String?) {
         Log.d("NovaWakeWord", "Partial: $hypothesis")
-        if (hypothesis?.contains("hey nova", ignoreCase = true) == true) {
+        if (hypothesis?.let { it.contains("hey nova", ignoreCase = true) || it.contains("dai", ignoreCase = true) } == true) {
             report("Wake phrase detected; opening command listener…")
             speech?.stop()
             NovaCommand.capture(this)
