@@ -93,7 +93,7 @@ class MainActivity : ComponentActivity() {
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
-                                Text("Your voice assistant", color = NovaMuted)
+                                Text("Tamil • English • Tanglish voice assistant", color = NovaMuted)
                             }
                             Surface(color = Color(0xFF202A46), shape = CircleShape) {
                                 Row(
@@ -184,7 +184,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    "First-time setup: speak naturally for 8 seconds. Other voices will be ignored after enrolment.",
+                                    "Speaker profile setup: speak naturally for 8 seconds. This profile is stored separately from speech recognition.",
                                     color = NovaMuted,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -225,7 +225,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    "Listening stays on. Speak commands directly—no wake word needed.",
+                                    "Speech recognition supports Tamil and English language switching where your phone provider has the models. Tanglish support can vary.",
                                     color = NovaMuted,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -336,7 +336,7 @@ private fun friendlyStatus(raw: String): String {
     return when {
         value.contains("model load failed") -> "Voice model could not load. Check the model setup."
         value.contains("microphone") && value.contains("error") -> "Microphone problem: $raw"
-        value.contains("listening continuously") || value.startsWith("heard:") -> "Nova is listening for your next command."
+        value.contains("listening for tamil") || value.startsWith("heard:") -> "Nova is listening for your next command."
         value.contains("model loaded") -> "Voice model loaded. Starting microphone…"
         value.contains("service started") -> "Starting the offline voice engine…"
         value.contains("stopped unexpectedly") -> "The listening service stopped. Tap Start listening to retry."
