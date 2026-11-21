@@ -58,13 +58,15 @@ class NovaAccessibilityService : AccessibilityService() {
         fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
             if (node == null || !node.isVisibleToUser) return
             val value = node.text?.toString()?.trim().orEmpty()
-            if (value.isNotBlank() && !node.isEditable && node.childCount == 0) {
+            if (value.isNotBlank() && !node.isEditable &&
+                value.length > 1 && value.length < 2000 &&
+                !value.matches(Regex("\\d{1,2}:\\d{2}(:\\d{2})?"))) {
                 candidates.add(value)
             }
             for (i in 0 until node.childCount) collect(node.getChild(i))
         }
         collect(root)
-        val message = candidates.lastOrNull { it.length > 1 } ?: return false
+        val message = candidates.distinct().lastOrNull() ?: return false
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Nova copied message", message))
         return true
