@@ -1,36 +1,27 @@
 package com.guna.nova
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
+import android.app.*
 import android.content.Intent
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
-import android.os.Build
-import android.os.IBinder
+import android.content.pm.ServiceInfo
+import android.media.*
+import android.os.*
+import android.speech.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import org.json.JSONObject
-import org.vosk.Model
-import org.vosk.Recognizer
-import org.vosk.android.StorageService
-import java.io.ByteArrayOutputStream
 
 class WakeWordService : Service() {
     companion object {
         const val ACTION_ENROLL = "com.guna.nova.ENROLL_VOICE"
-        private const val SAMPLE_RATE = 16000
+        private const val RATE = 16000
         private const val TAG = "NovaVoice"
     }
-
     @Volatile private var active = false
-    @Volatile private var enrollMode = false
+    private val handler = Handler(Looper.getMainLooper())
+    private var recognizer: SpeechRecognizer? = null
     private var recorder: AudioRecord? = null
-    private var model: Model? = null
-    private var recognizer: Recognizer? = null
     private var identity: VoiceIdentity? = null
-    private val channelId = "nova_listener"
+    private var detectedLanguage = "unknown"
+    private val channel = "nova_listener"
     private val notificationId = 41
 
     private fun report(message: String, running: Boolean = true) {
@@ -39,167 +30,142 @@ class WakeWordService : Service() {
             .putString("status", message).putBoolean("running", running).apply()
         getSystemService(NotificationManager::class.java).notify(notificationId, notification(message))
     }
-
-    private fun notification(message: String) =
-        NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Nova voice assistant")
-            .setContentText(message)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setOngoing(true).setOnlyAlertOnce(true).build()
+    private fun notification(message: String) = NotificationCompat.Builder(this, channel)
+        .setContentTitle("Nova voice assistant").setContentText(message)
+        .setSmallIcon(android.R.drawable.ic_btn_speak_now).setOngoing(true)
+        .setOnlyAlertOnce(true).build()
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
-        startForeground(notificationId, notification("Preparing offline voice models…"))
-        StorageService.unpack(this, "model", "model",
-            { loaded ->
-                model = loaded
-                try {
-                    recognizer = Recognizer(loaded, SAMPLE_RATE.toFloat())
-                    identity = VoiceIdentity(this)
-                    if (enrollMode) startCapture() else startCapture()
-                } catch (e: Exception) {
-                    report("Voice setup failed: ${e.message}", false)
-                    stopSelf()
-                }
-            },
-            { error ->
-                report("Offline speech model failed: ${error?.message ?: "unknown error"}", false)
-                stopSelf()
-            })
+        if (Build.VERSION.SDK_INT >= 26) {
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(channel, "Nova voice listener", NotificationManager.IMPORTANCE_LOW))
+        }
+        val note = notification("Preparing speech recognition…")
+        if (Build.VERSION.SDK_INT >= 29) startForeground(notificationId, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        else startForeground(notificationId, note)
+        identity = VoiceIdentity(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_ENROLL) {
-            enrollMode = true
-            if (model != null && !active) startCapture()
-            else if (active) report("Stop listening first, then tap Set up my voice.")
-        }
-        return START_STICKY
+        if (active) return START_NOT_STICKY
+        active = true
+        if (intent?.action == ACTION_ENROLL) Thread({ enrollVoice() }, "NovaEnrollment").start()
+        else if (identity?.isEnrolled() != true) {
+            report("Set up your voice profile first. Speaker verification is separate from speech recognition.", false)
+            active = false
+            stopSelf()
+        } else startSpeechRecognition()
+        return START_NOT_STICKY
     }
 
-    private fun startCapture() {
-        if (active) return
-        val min = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (min <= 0) {
-            report("Microphone is unavailable", false)
-            stopSelf()
-            return
-        }
-        val audio = AudioRecord(
-            MediaRecorder.AudioSource.MIC, SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, min * 2
-        )
+    // Captures a speaker profile separately; it is not used as a per-command gate yet.
+    private fun enrollVoice() {
+        val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        if (min <= 0) { report("Microphone unavailable for voice setup.", false); active = false; stopSelf(); return }
+        val audio = AudioRecord(MediaRecorder.AudioSource.MIC, RATE, AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT, min * 2)
         if (audio.state != AudioRecord.STATE_INITIALIZED) {
-            audio.release()
-            report("Could not open microphone", false)
-            stopSelf()
-            return
+            audio.release(); report("Could not open microphone for voice setup.", false); active = false; stopSelf(); return
         }
         recorder = audio
-        active = true
-        Thread({ captureLoop(audio) }, "NovaAudioCapture").start()
-    }
-
-    private fun captureLoop(audio: AudioRecord) {
-        val buffer = ShortArray(1600) // 100 ms
-        val enrollSamples = ArrayList<Float>()
-        val utterance = ArrayList<Float>()
-        var voicedChunks = 0
+        val samples = ArrayList<Float>()
+        val buffer = ShortArray(1600)
         try {
             audio.startRecording()
-            if (enrollMode) {
-                report("Voice setup: speak naturally for 8 seconds.")
-                val deadline = System.currentTimeMillis() + 8000
-                while (active && System.currentTimeMillis() < deadline) {
-                    val n = audio.read(buffer, 0, buffer.size)
-                    if (n > 0) for (i in 0 until n) enrollSamples.add(buffer[i] / 32768f)
-                }
-                if (active && enrollSamples.size >= SAMPLE_RATE * 4) {
-                    identity?.saveProfile(listOf(enrollSamples.toFloatArray()))
-                    enrollMode = false
-                    report("Your voice profile is saved on this phone. Start listening to use voice matching.")
-                } else if (active) {
-                    report("Voice setup was too short. Please try again.", false)
-                }
-                active = false
-                stopSelf()
-                return
-            }
-
-            if (identity?.isEnrolled() != true) {
-                report("Set up your voice before enabling voice-only commands.", false)
-                active = false
-                stopSelf()
-                return
-            }
-            report("Listening. Only your enrolled voice can trigger commands.")
-            val rec = recognizer ?: throw IllegalStateException("Speech recognizer unavailable")
-            while (active) {
+            report("Voice setup: speak naturally for 8 seconds.")
+            val until = System.currentTimeMillis() + 8000
+            while (active && System.currentTimeMillis() < until) {
                 val n = audio.read(buffer, 0, buffer.size)
-                if (n <= 0) continue
-                val bytes = ByteArray(n * 2)
-                for (i in 0 until n) {
-                    bytes[i * 2] = (buffer[i].toInt() and 0xff).toByte()
-                    bytes[i * 2 + 1] = (buffer[i].toInt() shr 8).toByte()
-                    utterance.add(buffer[i] / 32768f)
-                    if (kotlin.math.abs(buffer[i].toInt()) > 450) voicedChunks++
-                }
-                val endpoint = rec.acceptWaveForm(bytes, bytes.size)
-                if (endpoint) {
-                    val result = rec.result
-                    val spoken = try { JSONObject(result).optString("text", "") } catch (_: Exception) { "" }
-                    val samples = utterance.toFloatArray()
-                    if (spoken.isNotBlank() && samples.size >= SAMPLE_RATE * 2 && voicedChunks >= 8) {
-                        report("Checking speaker…")
-                        val mine = try { identity?.matches(samples) == true } catch (e: Exception) {
-                            Log.e(TAG, "Speaker check failed", e); false
-                        }
-                        if (mine) {
-                            report("Your voice recognised: $spoken")
-                            NovaCommand.execute(this, spoken)
-                        } else {
-                            report("Another voice detected. Ignored.")
-                        }
-                    }
-                    utterance.clear()
-                    voicedChunks = 0
-                }
+                if (n > 0) for (i in 0 until n) samples.add(buffer[i] / 32768f)
             }
+            if (active && samples.size >= RATE * 4) {
+                identity?.saveProfile(listOf(samples.toFloatArray()))
+                report("Voice profile saved on this phone. Speaker verification is kept separate.")
+            } else if (active) report("Voice setup was too short. Please try again.", false)
         } catch (e: Exception) {
-            Log.e(TAG, "Audio capture error", e)
-            if (active) report("Audio error: ${e.message}", false)
+            Log.e(TAG, "Enrollment failed", e); report("Voice setup failed: ${e.message}", false)
         } finally {
             try { if (audio.recordingState == AudioRecord.RECORDSTATE_RECORDING) audio.stop() } catch (_: Exception) {}
-            audio.release()
-            if (recorder === audio) recorder = null
-            active = false
+            audio.release(); recorder = null; active = false; stopSelf()
         }
+    }
+
+    private fun startSpeechRecognition() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            report("No speech recognition provider found. Enable Google's speech services.", false)
+            active = false; stopSelf(); return
+        }
+        try {
+            recognizer = if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this))
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+            else SpeechRecognizer.createSpeechRecognizer(this)
+            recognizer?.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) { report("Listening for Tamil, English and Tanglish. Speak naturally.") }
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() {}
+                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+                override fun onLanguageDetection(results: Bundle?) {
+                    if (Build.VERSION.SDK_INT >= 34) detectedLanguage = results?.getString(SpeechRecognizer.DETECTED_LANGUAGE) ?: "unknown"
+                }
+                override fun onError(error: Int) {
+                    if (active) handler.postDelayed({ listenAgain() },
+                        if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200L else 500L)
+                }
+                override fun onResults(results: Bundle?) {
+                    if (!active) return
+                    val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+                    if (phrase.isNotBlank()) {
+                        report("Heard: $phrase ($detectedLanguage)")
+                        try { NovaCommand.execute(this@WakeWordService, phrase) }
+                        catch (e: Exception) { Log.e(TAG, "Command failed", e); report("Command failed: ${e.message}") }
+                    }
+                    handler.postDelayed({ listenAgain() }, 350L)
+                }
+            })
+            listenAgain()
+        } catch (e: Exception) {
+            Log.e(TAG, "Recognizer start failed", e); report("Speech recognition failed: ${e.message}", false)
+            active = false; stopSelf()
+        }
+    }
+
+    private fun listenAgain() {
+        if (!active) return
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+            if (Build.VERSION.SDK_INT >= 34) {
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
+                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, RecognizerIntent.LANGUAGE_SWITCH_BALANCED)
+                putStringArrayListExtra(RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES, arrayListOf("ta-IN", "en-IN"))
+                putStringArrayListExtra(RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES, arrayListOf("ta-IN", "en-IN"))
+            }
+        }
+        try { recognizer?.startListening(intent) }
+        catch (e: Exception) { Log.w(TAG, "startListening retry", e); handler.postDelayed({ listenAgain() }, 1000L) }
     }
 
     override fun onDestroy() {
-        active = false
+        active = false; handler.removeCallbacksAndMessages(null)
+        try { recognizer?.cancel() } catch (_: Exception) {}
+        try { recognizer?.destroy() } catch (_: Exception) {}
+        recognizer = null
         try { recorder?.stop() } catch (_: Exception) {}
-        recorder?.release()
-        recorder = null
-        recognizer?.close()
-        model?.close()
-        identity?.close()
+        recorder?.release(); recorder = null
+        identity?.close(); identity = null
         getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
             .putBoolean("running", false).putString("status", "Listening stopped.").apply()
         stopForeground(STOP_FOREGROUND_REMOVE)
         getSystemService(NotificationManager::class.java).cancel(notificationId)
         super.onDestroy()
     }
-
     override fun onBind(intent: Intent?): IBinder? = null
-
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(channelId, "Nova voice listener", NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
-    }
 }
