@@ -24,8 +24,14 @@ object NovaCommand {
 
         when (intent.kind) {
             "COPY_LAST_MESSAGE" -> {
-                val copied = NovaAccessibilityService.instance?.copyLastMessage() == true
-                say(context, if (copied) "Copied the latest visible message. Focus the text box and say paste it." else "I couldn't find a message to copy on this screen.")
+                val service = NovaAccessibilityService.instance
+                val copied = service?.copyLastMessage() == true
+                val message = when {
+                    service == null -> "Copy failed: enable Nova in Android Accessibility settings, then try again."
+                    copied -> "Copied the latest visible text. Tap the destination text box and say: paste it."
+                    else -> "Copy failed: no readable message text was found. Keep the chat open and try again."
+                }
+                say(context, message)
             }
             "PASTE" -> {
                 val pasted = NovaAccessibilityService.instance?.pasteClipboard() == true
