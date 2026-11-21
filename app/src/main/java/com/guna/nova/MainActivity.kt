@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
                                     listOf(Color(0xFF171D39), NovaBackground, Color(0xFF090D18))
                                 )
                             )
+                            .statusBarsPadding()
                             .padding(horizontal = 20.dp, vertical = 18.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp)
                     ) {
