@@ -57,7 +57,7 @@ class NovaAccessibilityService : AccessibilityService() {
         val candidates = mutableListOf<String>()
         fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
             if (node == null || !node.isVisibleToUser) return
-            val value = node.text?.toString()?.trim().orEmpty()
+            val value = (node.text?.toString() ?: node.contentDescription?.toString()).orEmpty().trim()
             if (value.isNotBlank() && !node.isEditable &&
                 value.length > 1 && value.length < 2000 &&
                 !value.matches(Regex("\\d{1,2}:\\d{2}(:\\d{2})?"))) {
