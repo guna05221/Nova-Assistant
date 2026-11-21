@@ -2,6 +2,8 @@ package com.guna.nova
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.view.accessibility.AccessibilityEvent
@@ -44,6 +46,38 @@ class NovaAccessibilityService : AccessibilityService() {
     }
     override fun onInterrupt() {}
     override fun onDestroy() { instance = null; super.onDestroy() }
+
+
+    /**
+     * Copies the last visible, non-editable text item from the active app window.
+     * Apps that hide their text from Accessibility cannot be read.
+     */
+    fun copyLastMessage(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val candidates = mutableListOf<String>()
+        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (node == null || !node.isVisibleToUser) return
+            val value = node.text?.toString()?.trim().orEmpty()
+            if (value.isNotBlank() && !node.isEditable && node.childCount == 0) {
+                candidates.add(value)
+            }
+            for (i in 0 until node.childCount) collect(node.getChild(i))
+        }
+        collect(root)
+        val message = candidates.lastOrNull { it.length > 1 } ?: return false
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Nova copied message", message))
+        return true
+    }
+
+    /** Pastes clipboard content into the currently focused editable field. */
+    fun pasteClipboard(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val focused = root.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: return false
+        if (!focused.isEditable) return false
+        return focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_PASTE)
+    }
 
     fun back() { performGlobalAction(GLOBAL_ACTION_BACK) }
     fun home() { performGlobalAction(GLOBAL_ACTION_HOME) }
