@@ -28,6 +28,18 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Download and prepare Vosk English model
+        run: |
+          set -euo pipefail
+          MODEL_URL="https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
+          MODEL_SHA256="30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498"
+          curl -fL --retry 3 "$MODEL_URL" -o /tmp/vosk-model.zip
+          echo "$MODEL_SHA256  /tmp/vosk-model.zip" | sha256sum -c -
+          mkdir -p /tmp/vosk-model app/src/main/assets/model
+          unzip -q /tmp/vosk-model.zip -d /tmp/vosk-model
+          cp -a /tmp/vosk-model/vosk-model-small-en-us-0.15/. app/src/main/assets/model/
+          test -d app/src/main/assets/model/am
+          test -d app/src/main/assets/model/conf
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - name: Upload APK artifact
