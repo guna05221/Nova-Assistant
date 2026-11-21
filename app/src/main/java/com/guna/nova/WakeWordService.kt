@@ -32,7 +32,7 @@ class WakeWordService : Service(), RecognitionListener {
             { loaded ->
                 model = loaded
                 try {
-                    recognizer = Recognizer(loaded, 16000.0f, "[\\"hey nova\\"]")
+                    recognizer = Recognizer(loaded, 16000.0f, "[\"hey nova\"]")
                     speech = SpeechService(recognizer, 16000.0f)
                     speech?.startListening(this)
                 } catch (_: IOException) { stopSelf() }
