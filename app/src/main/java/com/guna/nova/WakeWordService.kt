@@ -50,10 +50,10 @@ class WakeWordService : Service(), RecognitionListener {
                     model = loaded
                     try {
                         report("Offline model loaded; opening microphone…")
-                        recognizer = Recognizer(loaded, 16000.0f, """["hey nova"]""")
+                        recognizer = Recognizer(loaded, 16000.0f, """["hey nova", "dai"]""")
                         speech = SpeechService(recognizer, 16000.0f)
                         val started = speech?.startListening(this) ?: false
-                        if (started) report("Microphone active; say Hey Nova")
+                        if (started) report("Microphone active; say Hey Nova or Dai")
                         else report("Vosk could not start microphone capture", false)
                     } catch (e: Exception) {
                         report("Voice startup error: ${e.javaClass.simpleName}: ${e.message}", false)
@@ -74,7 +74,7 @@ class WakeWordService : Service(), RecognitionListener {
 
     override fun onResult(hypothesis: String?) {
         Log.d("NovaWakeWord", "Final: $hypothesis")
-        if (hypothesis?.contains("hey nova", ignoreCase = true) == true) {
+        if (hypothesis?.let { it.contains("hey nova", ignoreCase = true) || it.contains("dai", ignoreCase = true) } == true) {
             report("Wake phrase detected; opening command listener…")
             speech?.stop()
             NovaCommand.capture(this)
