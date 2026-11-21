@@ -112,9 +112,21 @@ class WakeWordService : Service(), RecognitionListener {
         speech?.stop()
         recognizer?.close()
         model?.close()
-        getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
-            .putBoolean("running", false).putString("status", "Listening stopped").apply()
-        Log.i("NovaWakeWord", "Service destroyed")
+        val prefs = getSharedPreferences("nova_diagnostics", MODE_PRIVATE)
+        val oldStatus = prefs.getString("status", "") ?: ""
+        // Preserve the real startup/recognition error instead of hiding it.
+        if (oldStatus == "Microphone active; say Hey Nova" ||
+            oldStatus.startsWith("Service started") ||
+            oldStatus.startsWith("Offline model loaded")) {
+            prefs.edit().putBoolean("running", false)
+                .putString("status", "Service stopped unexpectedly. Check the latest Nova notification.")
+                .apply()
+        } else {
+            prefs.edit().putBoolean("running", false).apply()
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        getSystemService(NotificationManager::class.java).cancel(notificationId)
+        Log.i("NovaWakeWord", "Service destroyed; previous status=$oldStatus")
         super.onDestroy()
     }
 
