@@ -43,6 +43,14 @@ jobs:
           test -s app/src/main/assets/model/uuid
           test -d app/src/main/assets/model/am
           test -d app/src/main/assets/model/conf
+      - name: Download Sherpa ONNX speaker verification runtime and model
+        run: |
+          set -euo pipefail
+          mkdir -p app/libs app/src/main/assets
+          curl -fL --retry 3 "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar" -o app/libs/sherpa-onnx-2.0.1.aar
+          curl -fL --retry 3 "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx" -o app/src/main/assets/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx
+          test -s app/libs/sherpa-onnx-2.0.1.aar
+          test -s app/src/main/assets/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
       - name: Upload APK artifact
