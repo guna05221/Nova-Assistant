@@ -75,7 +75,11 @@ object NovaCommand {
 
     private fun understand(text: String, lastApp: String?): BrainIntent {
         val t = text.lowercase(Locale.ROOT)
-        // Clipboard commands act on the currently visible app screen.\n        if (containsAny(t, "copy the last message", "copy last message", "copy that message", "last message copy", "கடைசி மெசேஜ் காப்பி", "kadaisi message copy", "last message ah copy")) return BrainIntent("COPY_LAST_MESSAGE")\n        if (containsAny(t, "paste it", "paste that", "paste the message", "paste", "இத ஒட்டு", "ஒட்டு", "paste pannu", "adha paste pannu", "paste pannunga")) return BrainIntent("PASTE")\n\n        // English, common Tamil-script and Tanglish expressions.
+        // Clipboard commands act on the currently visible app screen.
+        if (containsAny(t, "copy the last message", "copy last message", "copy that message", "last message copy", "கடைசி மெசேஜ் காப்பி", "kadaisi message copy", "last message ah copy")) return BrainIntent("COPY_LAST_MESSAGE")
+        if (containsAny(t, "paste it", "paste that", "paste the message", "paste", "இத ஒட்டு", "ஒட்டு", "paste pannu", "adha paste pannu", "paste pannunga")) return BrainIntent("PASTE")
+
+        // English, common Tamil-script and Tanglish expressions.
         if (containsAny(t, "go home", "go to home", "home screen", "home page", "take me home",
                 "return home", "open home", "show home", "முகப்பு", "வீட்டுக்கு போ", "ஹோம் ஸ்கிரீன்",
                 "home ku po", "veetuku po", "home screen ku po", "main screen ku po")) return BrainIntent("HOME")
