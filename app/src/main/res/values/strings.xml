@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Nova</string>
+    <string name="accessibility_description">Allows Nova to perform voice-requested navigation gestures such as scrolling and going back. Nova does not inspect screen text or send messages.</string>
+</resources>
