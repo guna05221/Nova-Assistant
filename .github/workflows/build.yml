@@ -38,6 +38,9 @@ jobs:
           mkdir -p /tmp/vosk-model app/src/main/assets/model
           unzip -q /tmp/vosk-model.zip -d /tmp/vosk-model
           cp -a /tmp/vosk-model/vosk-model-small-en-us-0.15/. app/src/main/assets/model/
+          # Vosk Android StorageService.unpack requires this marker file.
+          python3 -c 'import uuid; print(uuid.uuid4())' > app/src/main/assets/model/uuid
+          test -s app/src/main/assets/model/uuid
           test -d app/src/main/assets/model/am
           test -d app/src/main/assets/model/conf
       - name: Build debug APK
