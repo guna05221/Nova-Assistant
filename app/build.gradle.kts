@@ -30,5 +30,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("com.alphacephei:vosk-android:0.3.75")
+    implementation(files("libs/sherpa-onnx-2.0.1.aar"))
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
