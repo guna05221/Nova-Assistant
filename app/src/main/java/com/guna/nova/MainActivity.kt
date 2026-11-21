@@ -334,6 +334,7 @@ private fun FeatureCard(
 private fun friendlyStatus(raw: String): String {
     val value = raw.lowercase()
     return when {
+        value.startsWith("copy failed:") || value.startsWith("copied") || value.startsWith("pasted") || value.startsWith("i couldn't paste") -> raw
         value.contains("model load failed") -> "Voice model could not load. Check the model setup."
         value.contains("microphone") && value.contains("error") -> "Microphone problem: $raw"
         value.contains("listening for tamil") || value.startsWith("heard:") -> "Nova is listening for your next command."
