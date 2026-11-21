@@ -20,7 +20,6 @@ class WakeWordService : Service() {
     private var recognizer: SpeechRecognizer? = null
     private var recorder: AudioRecord? = null
     private var identity: VoiceIdentity? = null
-    private var detectedLanguage = "unknown"
     private val channel = "nova_listener"
     private val notificationId = 41
 
@@ -108,9 +107,6 @@ class WakeWordService : Service() {
                 override fun onEndOfSpeech() {}
                 override fun onPartialResults(partialResults: Bundle?) {}
                 override fun onEvent(eventType: Int, params: Bundle?) {}
-                override fun onLanguageDetection(results: Bundle?) {
-                    if (Build.VERSION.SDK_INT >= 34) detectedLanguage = results?.getString(SpeechRecognizer.DETECTED_LANGUAGE) ?: "unknown"
-                }
                 override fun onError(error: Int) {
                     if (active) handler.postDelayed({ listenAgain() },
                         if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200L else 500L)
@@ -119,7 +115,7 @@ class WakeWordService : Service() {
                     if (!active) return
                     val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
                     if (phrase.isNotBlank()) {
-                        report("Heard: $phrase ($detectedLanguage)")
+                        report("Heard: $phrase")
                         try { NovaCommand.execute(this@WakeWordService, phrase) }
                         catch (e: Exception) { Log.e(TAG, "Command failed", e); report("Command failed: ${e.message}") }
                     }
