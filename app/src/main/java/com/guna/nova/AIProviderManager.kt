@@ -23,7 +23,7 @@ object AIProviderManager {
     private const val GROQ = "groq"
     private const val KEY_ALIAS = "nova_ai_credentials_v1"
     private const val GEMINI_MODEL = "gemini-2.5-flash"
-    private const val GROQ_MODEL = "llama-3.3-70b-versatile"
+    private const val GROQ_MODEL = "openai/gpt-oss-20b"
 
     data class Result(val ok: Boolean, val message: String, val provider: String? = null)
 
@@ -92,7 +92,7 @@ object AIProviderManager {
             val body = chatBody("Reply with exactly: Groq connection successful")
             val response = request("https://api.groq.com/openai/v1/chat/completions", "Authorization", "Bearer $key", body.toString())
             if (response.first in 200..299) Result(true, "Groq connected successfully.", "Groq")
-            else Result(false, "Groq returned HTTP ${response.first}. Check the key, model access or quota.")
+            else Result(false, "Groq returned HTTP ${response.first}: ${providerError(response.second)}")
         } catch (e: Exception) { Result(false, "Groq test failed: ${e.message ?: "network error"}") }
     }
 
@@ -128,10 +128,18 @@ object AIProviderManager {
                     val text = JSONObject(response.second).getJSONArray("choices").getJSONObject(0)
                         .getJSONObject("message").getString("content")
                     Result(true, text, "Groq")
-                } else Result(false, "Groq request failed (HTTP ${response.first}).")
+                } else Result(false, "Groq request failed (HTTP ${response.first}): ${providerError(response.second)}")
             } catch (e: Exception) { Result(false, "Groq request failed: ${e.message ?: "network error"}") }
         }
         return Result(false, "No cloud AI key is configured.")
+    }
+
+    private fun providerError(body: String): String {
+        return try {
+            val root = JSONObject(body)
+            root.optJSONObject("error")?.optString("message")
+                ?.takeIf { it.isNotBlank() }?.take(180) ?: "Check model access, API key or quota."
+        } catch (_: Exception) { "Check model access, API key or quota." }
     }
 
     private fun chatBody(text: String) = JSONObject().put("model", GROQ_MODEL)
