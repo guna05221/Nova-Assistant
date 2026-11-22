@@ -6,7 +6,6 @@ import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import java.util.Locale
-import kotlinx.coroutines.launch
 
 /**
  * Local-first intent router. Unknown speech is never silently treated as a web search.
@@ -22,18 +21,13 @@ object NovaCommand {
         if (command.isBlank()) return
 
         if (LocalAiManager.isDownloaded(appContext)) {
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                say(appContext, "Nova is understanding your request…")
-            }
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+            say(appContext, "Nova is understanding your request…")
+            LocalAiManager.interpretAsync(appContext, original) { plan ->
                 val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 val lastApp = prefs.getString("last_app", null)
-                val plan = LocalAiManager.interpret(appContext, original)
                 val aiIntent = plan?.let { parseAiIntent(it) }
                 val selected = aiIntent ?: understand(command, lastApp)
-                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    executeIntent(appContext, selected)
-                }
+                executeIntent(appContext, selected)
             }
             return
         }
