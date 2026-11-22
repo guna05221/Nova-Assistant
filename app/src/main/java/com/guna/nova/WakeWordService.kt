@@ -130,7 +130,10 @@ class WakeWordService : Service() {
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
                 override fun onEndOfSpeech() {}
-                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    if (partial.isNotBlank()) NovaOverlayService.userPartial(this@WakeWordService, partial)
+                }
                 override fun onEvent(eventType: Int, params: Bundle?) {}
                 override fun onError(error: Int) {
                     recognitionActive = false
