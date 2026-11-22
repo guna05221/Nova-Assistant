@@ -1,40 +1,46 @@
 # Nova Backend — Development Foundation
 
-This repository now includes a Vercel Functions API scaffold. It is intentionally safe-by-default and is not deployed.
+This repository includes a Vercel Functions API scaffold. It is intentionally safe-by-default and is not deployed.
 
 ## Routes
 
-- GET /api/health — reports whether required server-side configuration is present. It never returns secrets.
+- GET /api/health — reports configuration presence only; never returns secrets.
 - POST /api/v1/session — exchanges a manually entered pairing code for a short-lived signed bearer token.
-- POST /api/v1/chat — authenticated conversation endpoint using the OpenAI Responses API.
+- POST /api/v1/chat — authenticated conversation endpoint using Gemini first and Groq as fallback.
 
-## Local configuration
+## Free-tier provider configuration
 
-Copy .env.example to .env.local for local development. Set:
-- NOVA_CLOUD_AI_ENABLED=false until you explicitly decide to enable paid provider requests.
+Set these server-side environment variables in Vercel or a local .env.local file:
+
+- NOVA_CLOUD_AI_ENABLED=false (keep disabled until you explicitly opt in).
+- GEMINI_API_KEY and NOVA_GEMINI_MODEL for Google Gemini.
+- GROQ_API_KEY and NOVA_GROQ_MODEL for Groq fallback.
 - NOVA_PAIRING_CODE to a random value of at least 12 characters.
 - NOVA_SESSION_SECRET to a cryptographically random value of at least 32 characters.
-- OPENAI_API_KEY only in the server environment, never in Android, Git, or client config.
-- NOVA_OPENAI_MODEL to a model ID available to your OpenAI API project.
 - NOVA_MAX_OUTPUT_TOKENS to cap output size (100–1000).
 
-No API request to OpenAI is made while NOVA_CLOUD_AI_ENABLED is not exactly true. A health check does not contact OpenAI.
+Get provider keys from Google AI Studio and Groq Console. Select model IDs currently available to your accounts. Free tiers have changing quotas, model access and terms; they are not unlimited or guaranteed to remain free.
+
+Nova tries Gemini first. It falls back to Groq only when Gemini is temporarily unavailable, rate-limited, or over quota. It does not retry a permanent request/configuration error. If neither provider is configured or available, the API returns a clear unavailable response so the Android app can use its supported offline features.
+
+No provider request is made unless NOVA_CLOUD_AI_ENABLED is exactly true. Keep both provider accounts on free tiers and do not enable paid billing if the goal is ₹0 provider spend.
 
 ## Security and current limitations
 
+- Provider keys stay on the server and must never be placed in Android, Git, or client configuration.
 - The session token is signed with HMAC-SHA256 and expires after seven days.
 - Pairing-code and chat throttles are in-memory best-effort protections. Serverless instances do not share memory; these are not production-grade global rate limits.
 - The current pairing-code flow is a development bootstrap, not full account/device identity management. Rotate the pairing code if it is exposed.
 - The chat endpoint sends only the current message, not a stored transcript. Raw voice audio is not uploaded.
-- The OpenAI request uses store=false. Provider usage tokens are returned to the caller for display.
-- The tool policy in lib/server/policy.ts is an allow-list foundation only. No tools are executed by the backend yet.
-- A reliable monthly USD hard cap, durable usage ledger, revocation, and global per-user quotas require a persistent database or an equivalent durable metering service. They are not falsely simulated with per-instance memory.
-- Do not enable paid requests until an OpenAI API key, model, budget policy, and billing controls have been configured and reviewed.
+- Provider usage counts are returned when available. They are not a durable billing ledger.
+- The tool policy in lib/server/policy.ts is an allow-list foundation only. No device tools are executed by the backend yet.
+- A reliable monthly hard cap, durable usage ledger, revocation, and global per-user quotas require persistent storage. They are not simulated with per-instance memory.
+- Free-tier quotas can be exhausted; automatic fallback cannot guarantee uninterrupted free service.
 
 ## Offline behavior
 
-The backend never pretends to be available offline. When it is disabled or unreachable, the client should use only its existing supported local commands and show that cloud reasoning is unavailable. Do not queue sensitive actions for later automatic execution.
+When cloud AI is disabled, offline, or out of quota, Nova should use only its supported on-device commands and local model. Do not queue sensitive actions for later automatic execution.
 
-## Deploy status
+## Deployment status
 
-Not deployed. No Vercel project was created or linked by this change. No Vercel resources, paid services, API keys, or provider requests were created.
+Not deployed. No Vercel project, paid service, API key, or provider request was created by this change.
