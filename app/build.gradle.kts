@@ -52,3 +52,5 @@ dependencies {
     implementation("dev.ffmpegkit-maintained:llama-android:0.1.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+// Persistent Nova release signing is supplied by GitHub Actions secrets.
