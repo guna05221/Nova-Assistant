@@ -153,6 +153,7 @@ class WakeWordService : Service() {
                         } else {
                             lastHandledPhrase = normalized
                             lastHandledAt = now
+                            NovaOverlayService.userFinal(this@WakeWordService, phrase)
                             report("Heard: $phrase")
                             try { NovaCommand.execute(this@WakeWordService, phrase) }
                             catch (e: Exception) { Log.e(TAG, "Command failed", e); report("Command failed: ${e.message}") }
