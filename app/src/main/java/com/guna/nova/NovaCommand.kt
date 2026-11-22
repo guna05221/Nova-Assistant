@@ -4,7 +4,12 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicLong
 import java.util.Locale
 
 /**
@@ -13,6 +18,8 @@ import java.util.Locale
  */
 object NovaCommand {
     private const val PREFS = "nova_brain"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val requestSequence = AtomicLong(0L)
 
     fun execute(context: Context, raw: String) {
         val appContext = context.applicationContext
@@ -20,14 +27,18 @@ object NovaCommand {
         val command = normalize(original)
         if (command.isBlank()) return
 
-        // Enforce transaction safety in app code, not only in an AI prompt.
+        val requestId = requestSequence.incrementAndGet()
+
+        // Transaction safety is enforced before any model sees the request.
         if (isFinancialAction(command)) {
-            say(appContext, "I can explain payment options, but Nova never makes payments, transfers, purchases, subscriptions or paid orders.")
+            say(appContext, "I can explain payment options, but Nova never makes payments, transfers, purchases, subscriptions, recharges or paid orders.")
             return
         }
 
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val directIntent = understand(command, prefs.getString("last_app", null))
+
+        // These actions require explicit user wording and are never inferred by an AI model.
         if (directIntent.kind == "TYPE_TEXT" || directIntent.kind == "SEND") {
             executeIntent(appContext, directIntent)
             return
@@ -37,57 +48,100 @@ object NovaCommand {
             return
         }
 
-        // Deterministic phone actions stay separate from natural conversation.
+        // Deterministic commands take precedence over AI interpretation.
         if (directIntent.kind != "UNKNOWN" && directIntent.kind != "CONVERSATION") {
             executeIntent(appContext, directIntent)
             return
         }
-
-        if (AIProviderManager.hasGemini(appContext) || AIProviderManager.hasGroq(appContext)) {
-            statusOnly(appContext, "Thinking…")
-            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                val history = conversationHistory(appContext, original)
-                val result = AIProviderManager.chat(appContext, history)
-                if (result.ok) {
-                    saveConversation(appContext, original, result.message)
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        say(appContext, result.message)
-                    }
-                } else if (LocalAiManager.isDownloaded(appContext)) {
-                    LocalAiManager.chatAsync(appContext, history.toString()) { localAnswer ->
-                        if (!localAnswer.isNullOrBlank()) {
-                            saveConversation(appContext, original, localAnswer)
-                            say(appContext, localAnswer)
-                        } else {
-                            say(appContext, "My cloud connection is unavailable, and my local model couldn't answer that. Please try again.")
-                        }
-                    }
-                } else {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        say(appContext, "I couldn't reach the AI service. Check your internet connection or configure the local Qwen model.")
-                    }
-                }
-            }
+        if (directIntent.kind == "CONVERSATION") {
+            say(appContext, directIntent.value.orEmpty())
             return
         }
 
-        if (LocalAiManager.isDownloaded(appContext)) {
-            statusOnly(appContext, "Thinking offline…")
-            val history = conversationHistory(appContext, original)
-            LocalAiManager.chatAsync(appContext, history.toString()) { localAnswer ->
-                if (!localAnswer.isNullOrBlank()) {
-                    saveConversation(appContext, original, localAnswer)
-                    say(appContext, localAnswer)
-                } else {
-                    say(appContext, "I couldn't answer that with the local model. Try configuring Gemini or Groq for stronger conversation.")
-                }
-            }
-            return
+        // Keep the microphone responsive while AI thinks, but discard stale model results
+        // if a newer user utterance arrives before the previous request completes.
+        statusOnly(appContext, "Thinking…")
+        scope.launch {
+            processUnknownUtterance(appContext, original, requestId)
         }
-
-        if (directIntent.kind == "CONVERSATION") say(appContext, directIntent.value.orEmpty())
-        else say(appContext, "To answer questions and have natural conversations, configure Gemini or Groq, or download the local Qwen model.")
     }
+
+    private suspend fun processUnknownUtterance(context: Context, utterance: String, requestId: Long) {
+        val history = conversationHistory(context, utterance)
+        val cloudAvailable = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
+        val localAvailable = LocalAiManager.isDownloaded(context)
+
+        val plannerPrompt = """
+            You are Nova, a safe Android voice assistant. Understand English, Tamil and Tanglish.
+            Infer the user's intent from natural language and return exactly one JSON object:
+            {"action":"ACTION","target":"","reply":""}
+            Allowed actions:
+            OPEN_APP, SEARCH, WEB_SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN,
+            FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, CONVERSATION, UNSUPPORTED.
+            Use CONVERSATION for ordinary questions, explanations, calculations, jokes and casual chat.
+            Put a complete, natural spoken answer in reply for CONVERSATION.
+            Use OPEN_APP only when the user clearly asks to open an installed app.
+            Use SEARCH or WEB_SEARCH only when the user clearly asks to search.
+            Use FOOD_SEARCH for requests to find food or nearby restaurants.
+            Use SEARCH_SWIGGY or SEARCH_ZOMATO only when the user names that service.
+            Never propose SEND, TYPE_TEXT, payments, transfers, purchases, subscriptions, recharges,
+            orders, deletion, publishing, security changes, calls or unsupported actions.
+            Never claim that an action has already happened. Do not invent live search results.
+            Preserve the user's language in the reply where practical. Ask one short question if essential
+            information is missing. Return JSON only, without markdown.
+        """.trimIndent()
+
+        var plannedIntent: BrainIntent? = null
+        if (cloudAvailable) {
+            val planned = AIProviderManager.plan(context, plannerPrompt, utterance)
+            if (planned.ok) plannedIntent = parseAiIntent(planned.message)
+        }
+        if (plannedIntent == null && localAvailable) {
+            val localPlan = LocalAiManager.interpret(context, utterance)
+            if (!localPlan.isNullOrBlank()) plannedIntent = parseAiIntent(localPlan)
+        }
+
+        if (requestSequence.get() != requestId) return
+
+        val safeAction = plannedIntent?.takeIf { isSafeModelAction(it.kind) }
+        if (safeAction != null && safeAction.kind != "CONVERSATION") {
+            withContext(Dispatchers.Main) {
+                if (requestSequence.get() == requestId) executeIntent(context, safeAction)
+            }
+            return
+        }
+
+        val answer = when {
+            plannedIntent?.kind == "CONVERSATION" && !plannedIntent.value.isNullOrBlank() ->
+                plannedIntent.value
+            cloudAvailable -> {
+                val result = AIProviderManager.chat(context, history)
+                if (result.ok) result.message
+                else if (localAvailable) LocalAiManager.chat(context, history.toString())
+                else null
+            }
+            localAvailable -> LocalAiManager.chat(context, history.toString())
+            else -> null
+        }
+
+        if (requestSequence.get() != requestId) return
+
+        val response = answer?.trim()?.takeIf { it.isNotBlank() } ?: when {
+            cloudAvailable -> "I couldn't reach the AI service just now. Please try again."
+            localAvailable -> "I couldn't generate a response with the local model. Please try again."
+            else -> "Natural conversation isn't configured yet. Connect Gemini or Groq, or install the local Qwen model."
+        }
+
+        saveConversation(context, utterance, response)
+        withContext(Dispatchers.Main) {
+            if (requestSequence.get() == requestId) say(context, response)
+        }
+    }
+
+    private fun isSafeModelAction(kind: String): Boolean = kind in setOf(
+        "OPEN_APP", "SEARCH", "WEB_SEARCH", "HOME", "BACK", "SETTINGS",
+        "SCROLL_UP", "SCROLL_DOWN", "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO"
+    )
 
     private fun isFinancialAction(text: String): Boolean = containsAny(
         text,
