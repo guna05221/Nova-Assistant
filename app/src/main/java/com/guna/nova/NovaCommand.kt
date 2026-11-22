@@ -114,7 +114,7 @@ object NovaCommand {
             val reply = json.optString("reply").takeIf { it.isNotBlank() }
             when (action) {
                 "OPEN_APP", "SEARCH", "HOME", "BACK", "SETTINGS", "SCROLL_UP",
-                "SCROLL_DOWN", "COPY_LAST_MESSAGE", "PASTE",
+                "SCROLL_DOWN", "COPY_LAST_MESSAGE", "PASTE", "TYPE_TEXT", "SEND",
                 "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO", "WEB_SEARCH" -> BrainIntent(action, target)
                 "CONVERSATION" -> BrainIntent("CONVERSATION", reply ?: "Tell me a little more about what you want me to do.")
                 "UNSUPPORTED", "SEND_MESSAGE", "PAYMENT", "DELETE" ->
