@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 /**
  * Local-first intent router. Unknown speech is never silently treated as a web search.
