@@ -68,9 +68,20 @@ class NovaAccessibilityService : AccessibilityService() {
                 value.contains("release to send", ignoreCase = true) ||
                 value.contains("hold to record", ignoreCase = true) ||
                 value.equals("voice message", ignoreCase = true)
+            // WhatsApp exposes message times as separate TextViews (for example "7:52 am").
+            // Exclude both 24-hour and 12-hour clock formats before selecting the last text node.
+            val isTimestamp = Regex("(?i)^\\d{1,2}:\\d{2}(:\\d{2})?\\s*(am|pm)?$").matches(value)
+            val isDateOrDayLabel = value.equals("today", ignoreCase = true) ||
+                value.equals("yesterday", ignoreCase = true) ||
+                value.equals("monday", ignoreCase = true) ||
+                value.equals("tuesday", ignoreCase = true) ||
+                value.equals("wednesday", ignoreCase = true) ||
+                value.equals("thursday", ignoreCase = true) ||
+                value.equals("friday", ignoreCase = true) ||
+                value.equals("saturday", ignoreCase = true) ||
+                value.equals("sunday", ignoreCase = true)
             if (value.isNotBlank() && isTextView && !node.isEditable && !isControlHint &&
-                value.length > 1 && value.length < 2000 &&
-                !value.matches(Regex("\\d{1,2}:\\d{2}(:\\d{2})?"))) {
+                !isTimestamp && !isDateOrDayLabel && value.length > 1 && value.length < 2000) {
                 candidates.add(value)
             }
             for (i in 0 until node.childCount) collect(node.getChild(i))
