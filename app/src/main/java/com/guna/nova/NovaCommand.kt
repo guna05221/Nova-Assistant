@@ -192,9 +192,7 @@ object NovaCommand {
     private fun say(context: Context, message: String) {
         context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
             .putString("status", message).putBoolean("running", true).apply()
-        android.os.Handler(android.os.Looper.getMainLooper()).post {
-            Toast.makeText(context.applicationContext, message, Toast.LENGTH_LONG).show()
-        }
+        // Main screen displays status; avoid a disruptive popup for every utterance.
     }
 
     private fun openApp(context: Context, label: String): Boolean {
