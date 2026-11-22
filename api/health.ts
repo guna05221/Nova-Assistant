@@ -6,9 +6,11 @@ export default {
     return json({
       service: "nova-api",
       status: "ok",
-      cloudAiConfigured: process.env.NOVA_CLOUD_AI_ENABLED === "true" &&
-        Boolean(process.env.OPENAI_API_KEY) &&
-        Boolean(process.env.NOVA_OPENAI_MODEL),
+      cloudAiEnabled: process.env.NOVA_CLOUD_AI_ENABLED === "true",
+      providers: {
+        geminiConfigured: Boolean(process.env.GEMINI_API_KEY && process.env.NOVA_GEMINI_MODEL),
+        groqConfigured: Boolean(process.env.GROQ_API_KEY && process.env.NOVA_GROQ_MODEL),
+      },
       authConfigured: Boolean(process.env.NOVA_PAIRING_CODE) &&
         Boolean(process.env.NOVA_SESSION_SECRET),
       timestamp: new Date().toISOString(),
