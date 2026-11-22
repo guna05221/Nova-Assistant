@@ -71,9 +71,12 @@ object NovaCommand {
         val cloudAvailable = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
         val localAvailable = LocalAiManager.isDownloaded(context)
 
+        val plannerContext = buildPlannerContext(history, utterance)
         val plannerPrompt = """
             You are Nova, a safe Android voice assistant. Understand English, Tamil and Tanglish.
-            Infer the user's intent from natural language and return exactly one JSON object:
+            The user input includes recent conversation context and the current request. Use prior turns
+            to resolve follow-ups such as "why", "that one", "tell me more" and "do it again".
+            Infer the current user's intent and return exactly one JSON object:
             {"action":"ACTION","target":"","reply":""}
             Allowed actions:
             OPEN_APP, SEARCH, WEB_SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN,
@@ -93,11 +96,11 @@ object NovaCommand {
 
         var plannedIntent: BrainIntent? = null
         if (cloudAvailable) {
-            val planned = AIProviderManager.plan(context, plannerPrompt, utterance)
+            val planned = AIProviderManager.plan(context, plannerPrompt, plannerContext)
             if (planned.ok) plannedIntent = parseAiIntent(planned.message)
         }
         if (plannedIntent == null && localAvailable) {
-            val localPlan = LocalAiManager.interpret(context, utterance)
+            val localPlan = LocalAiManager.interpret(context, plannerContext)
             if (!localPlan.isNullOrBlank()) plannedIntent = parseAiIntent(localPlan)
         }
 
@@ -136,6 +139,28 @@ object NovaCommand {
         withContext(Dispatchers.Main) {
             if (requestSequence.get() == requestId) say(context, response)
         }
+    }
+
+    private fun buildPlannerContext(history: org.json.JSONArray, latest: String): String {
+        val previous = StringBuilder()
+        val end = (history.length() - 1).coerceAtLeast(0)
+        val start = (end - 4).coerceAtLeast(0)
+        for (index in start until end) {
+            val item = history.optJSONObject(index) ?: continue
+            val role = item.optString("role")
+            val content = item.optString("content").trim()
+            if ((role == "user" || role == "assistant") && content.isNotBlank()) {
+                previous.append(role).append(": ").append(content.take(150)).append("\n")
+            }
+        }
+        return buildString {
+            if (previous.isNotEmpty()) {
+                append("Recent conversation:\n")
+                append(previous)
+            }
+            append("Current user request: ")
+            append(latest.take(500))
+        }.takeLast(1200)
     }
 
     private fun isSafeModelAction(kind: String): Boolean = kind in setOf(
