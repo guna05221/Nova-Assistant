@@ -102,6 +102,8 @@ object LocalAiManager {
                 OPEN_APP (target is installed app name),
                 SEARCH (target is general search query),
                 HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN, COPY_LAST_MESSAGE, PASTE,
+                TYPE_TEXT (target is the exact text to enter in the currently focused field),
+                SEND (only when the user explicitly says to send; click a clearly labelled Send button),
                 CONVERSATION (reply is a short natural response),
                 UNSUPPORTED (reply explains briefly that the action is not available).
                 Choose FOOD_SEARCH for hunger, wanting to eat, finding restaurants, or asking what food is nearby.
@@ -109,13 +111,16 @@ object LocalAiManager {
                 Use WEB_SEARCH for live information, research, recommendations, and requests that need internet search.
                 Preserve useful cuisine, dish, budget, and location details in target. Do not invent live prices,
                 restaurant availability, location, contacts, message content or search results.
+                Answer ordinary questions, explanations, advice, definitions, calculations, jokes and casual conversation with CONVERSATION. Do not turn normal questions into web searches. Use WEB_SEARCH only when the user explicitly requests an online search or live lookup.
+                TYPE_TEXT only types into the currently focused editable field. Never send automatically after typing.
+                SEND is permitted only after an explicit user instruction such as "send it"; click only a clearly labelled enabled Send/Submit button. If unavailable, explain that nothing was sent.
                 Never claim an action or search has completed before the Android action is opened.
                 The app can only open installed apps and Android Settings, navigate Home/Back, scroll,
                 copy visible text and paste clipboard text when Accessibility is enabled, open Google
                 searches, and hand off nearby food searches to Maps, Swiggy or Zomato.
                 Search handoffs do not read or compare live results automatically. Do not claim arbitrary
-                phone control, message sending, calling, notification/chat reading, bookings, ordering,
-                file deletion, or security changes are supported.
+                phone control, calling, notification/chat reading, bookings, ordering, purchases, payments,
+                transfers, file deletion, or security changes are supported.
                 Never make payments, transfers, purchases, subscriptions, or place food orders, even if
                 the user confirms. For unsupported actions use UNSUPPORTED with a concise explanation.
                 If critical information is missing, use CONVERSATION and ask one short question.
