@@ -125,6 +125,59 @@ class MainActivity : ComponentActivity() {
                         }
 
                         Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF202B48)),
+                            shape = RoundedCornerShape(22.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier.size(46.dp).background(Color(0xFF34436A), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.GraphicEq, contentDescription = null, tint = NovaMint)
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("LIVE CONVERSATION", color = Color.White, fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(
+                                        "Keep Nova's chat bubble visible while you use other apps.",
+                                        color = NovaMuted,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        if (!Settings.canDrawOverlays(this@MainActivity)) {
+                                            startActivity(
+                                                Intent(
+                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                    Uri.parse("package:$packageName")
+                                                )
+                                            )
+                                        } else {
+                                            startService(Intent(this@MainActivity, NovaOverlayService::class.java).apply {
+                                                action = NovaOverlayService.ACTION_SHOW
+                                            })
+                                        }
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 10.dp),
+                                    shape = RoundedCornerShape(14.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = NovaMint,
+                                        contentColor = Color(0xFF0B1824)
+                                    )
+                                ) {
+                                    Text("Open chat", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Card(
                             colors = CardDefaults.cardColors(containerColor = NovaPanel),
                             shape = RoundedCornerShape(28.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -233,25 +286,6 @@ class MainActivity : ComponentActivity() {
                                         if (running) "Stop listening" else "Start listening",
                                         fontWeight = FontWeight.Bold
                                     )
-                                }
-                                TextButton(
-                                    onClick = {
-                                        if (!Settings.canDrawOverlays(this@MainActivity)) {
-                                            startActivity(
-                                                Intent(
-                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                                    Uri.parse("package:$packageName")
-                                                )
-                                            )
-                                        } else {
-                                            startService(Intent(this@MainActivity, NovaOverlayService::class.java).apply {
-                                                action = NovaOverlayService.ACTION_SHOW
-                                            })
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Enable floating conversation popup", color = NovaMint)
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
