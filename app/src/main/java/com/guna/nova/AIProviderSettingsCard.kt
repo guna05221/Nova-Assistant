@@ -34,7 +34,7 @@ fun AIProviderSettingsCard() {
                 "Gemini ${if (geminiSaved) "• key saved" else "• not configured"}   |   Groq ${if (groqSaved) "• key saved" else "• not configured"}",
                 color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall
             )
-            Text("Use Gemini first, Groq as fallback. Local Qwen remains available offline.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+            Text("Use Gemini first, Groq as fallback. Local Qwen remains available offline.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("Configure AI keys")
             }
@@ -83,9 +83,9 @@ fun AIProviderSettingsCard() {
                             }
                         }) { Text("Test Groq") }
                     }
-                    Text(status, style = MaterialTheme.typography.bodySmall, color = NovaMuted)
+                    Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    Text("Keys are encrypted with Android Keystore. They are not uploaded to GitHub.", style = MaterialTheme.typography.bodySmall, color = NovaMuted)
+                    Text("Keys are encrypted with Android Keystore. They are not uploaded to GitHub.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
             confirmButton = {
