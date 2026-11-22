@@ -50,6 +50,11 @@ Accessibility is powerful. Nova does not silently send messages, make purchases,
 
 ## Cloud backend foundation (development only)
 - Vercel Function routes are scaffolded under `api/`: health, pairing session, and authenticated chat.
-- Server-side OpenAI Responses API integration is disabled by default. No provider request is sent until `NOVA_CLOUD_AI_ENABLED=true` and server environment variables are configured.
+- Server-side Gemini-first / Groq-fallback integration is disabled by default. No provider request is sent until `NOVA_CLOUD_AI_ENABLED=true` and server environment variables are configured.
 - See [BACKEND_SETUP.md](BACKEND_SETUP.md) for local configuration and limitations, and [CLOUD_AI_ARCHITECTURE.md](CLOUD_AI_ARCHITECTURE.md) for the target design.
 - No Vercel project has been created or deployed. No provider key or paid resource has been created.
+
+
+### Cloud AI providers
+
+The backend now has provider adapters for Google Gemini (primary) and Groq (fallback). Both are intended for their respective free tiers, which have quotas and may change. Nova falls back to the existing on-device experience when neither provider is available. See [BACKEND_SETUP.md](BACKEND_SETUP.md). This is a backend foundation only; Android-to-cloud integration and deployment are still pending.
