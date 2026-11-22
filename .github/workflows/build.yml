@@ -9,6 +9,13 @@ on:
       - 'gradle.properties'
       - 'app/**'
       - '.github/workflows/build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**.gradle.kts'
+      - 'gradle.properties'
+      - 'app/**'
+      - '.github/workflows/build.yml'
 
 permissions:
   contents: read
