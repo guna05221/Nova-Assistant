@@ -67,6 +67,7 @@ class WakeWordService : Service() {
             try { recorder?.stop() } catch (_: Exception) {}
             getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
                 .putBoolean("running", false).putString("status", "Listening stopped.").apply()
+            NovaOverlayService.hide(this)
             stopSelf(startId)
             return START_NOT_STICKY
         }
