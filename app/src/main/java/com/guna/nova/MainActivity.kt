@@ -212,7 +212,11 @@ class MainActivity : ComponentActivity() {
                                                     ).apply()
                                             }
                                         } else {
-                                            stopService(Intent(this@MainActivity, WakeWordService::class.java))
+                                            getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
+                                                .putBoolean("running", false).putString("status", "Listening stopped.").apply()
+                                            stopService(Intent(this@MainActivity, WakeWordService::class.java).apply {
+                                                action = WakeWordService.ACTION_STOP
+                                            })
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth().height(54.dp),
