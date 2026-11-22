@@ -82,7 +82,8 @@ object NovaCommand {
             OPEN_APP, SEARCH, WEB_SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN,
             FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, CONVERSATION, UNSUPPORTED.
             Use CONVERSATION for ordinary questions, explanations, calculations, jokes and casual chat.
-            Put a complete, natural spoken answer in reply for CONVERSATION.
+            For CONVERSATION, return an empty reply string. The conversation engine generates
+            the spoken answer separately using the full conversation history.
             Use OPEN_APP only when the user clearly asks to open an installed app.
             Use SEARCH or WEB_SEARCH only when the user clearly asks to search.
             Use FOOD_SEARCH for requests to find food or nearby restaurants.
@@ -240,7 +241,7 @@ object NovaCommand {
                 "OPEN_APP", "SEARCH", "HOME", "BACK", "SETTINGS", "SCROLL_UP",
                 "SCROLL_DOWN", "COPY_LAST_MESSAGE", "PASTE", "TYPE_TEXT", "SEND",
                 "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO", "WEB_SEARCH" -> BrainIntent(action, target)
-                "CONVERSATION" -> BrainIntent("CONVERSATION", reply ?: "Tell me a little more about what you want me to do.")
+                "CONVERSATION" -> BrainIntent("CONVERSATION", reply)
                 "UNSUPPORTED", "SEND_MESSAGE", "PAYMENT", "DELETE" ->
                     BrainIntent("CONVERSATION", reply ?: "I can't perform that action yet.")
                 else -> null
@@ -376,11 +377,15 @@ object NovaCommand {
         if (containsAny(t, "what can you do", "who are you", "how are you", "hello", "hi nova",
                 "வணக்கம்", "எப்படி இருக்க", "enna panra", "epdi iruka", "vanakkam"))
             return BrainIntent("CONVERSATION", "Hello! I'm Nova. You can speak to me naturally in Tamil, English or Tanglish. What would you like?")
-        if (containsAny(t, "do that again", "again", "repeat that", "மீண்டும் செய்", "thirumba pannu")) {
-            return when (lastApp) {
-                null -> BrainIntent("CONVERSATION", "I don't have a previous action to repeat yet.")
-                else -> BrainIntent("OPEN_APP", lastApp)
-            }
+        // Repeat an app action only when the user explicitly names an app-opening action.
+        // Generic "again" belongs to conversation reasoning (e.g. another joke / explain again).
+        val reopen = Regex("^(?:please )?(?:open|launch|start) (.+?) again$")
+            .matchEntire(t)?.groupValues?.get(1)?.trim()
+        if (!reopen.isNullOrBlank()) return BrainIntent("OPEN_APP", reopen)
+        if (containsAny(t, "repeat the last action", "do the last action again", "repeat that action")) {
+            return if (lastApp.isNullOrBlank())
+                BrainIntent("CONVERSATION", "I don't have an app action to repeat yet.")
+            else BrainIntent("OPEN_APP", lastApp)
         }
         if (containsAny(t, "not that", "wrong one", "வேண்டாம்", "illa adhu illa", "no not this"))
             return BrainIntent("CONVERSATION", "Okay, I won't do that. Tell me what you meant instead.")
