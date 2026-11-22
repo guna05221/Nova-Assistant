@@ -24,15 +24,15 @@ fun AIProviderSettingsCard() {
     var groqSaved by remember { mutableStateOf(AIProviderManager.hasGroq(context)) }
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = NovaPanel.copy(alpha = 0.96f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         shape = RoundedCornerShape(20.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("CLOUD AI PROVIDERS", color = NovaMuted, style = MaterialTheme.typography.labelLarge)
+            Text("CLOUD AI PROVIDERS", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
             Text(
                 "Gemini ${if (geminiSaved) "• key saved" else "• not configured"}   |   Groq ${if (groqSaved) "• key saved" else "• not configured"}",
-                color = NovaMint, style = MaterialTheme.typography.bodySmall
+                color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall
             )
             Text("Use Gemini first, Groq as fallback. Local Qwen remains available offline.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
             Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth()) {
