@@ -51,27 +51,17 @@ object NovaCommand {
         if (pending != null) {
             when {
                 isConfirmation(command) -> {
-                    val approved = synchronized(pendingSendLock) {
-                        val current = pendingSend
-                        pendingSend = null // consume before executing; prevents replay/double-send
-                        current?.takeIf { it.expiresAt >= System.currentTimeMillis() }
-                    }
-                    if (approved == null) {
-                        say(appContext, "That approval expired. Please ask me to send it again if you still want to.")
-                    } else {
-                        val service = NovaAccessibilityService.instance
-                        val sent = service?.clickSendButton(approved.packageName, approved.expectedText) == true
-                        say(appContext, if (sent) "I tapped Send for that message. Please check the app to verify it was sent."
-                            else "I didn't send it because the app or message changed. Please review it and ask again.")
-                    }
+                    resolvePendingSend(appContext, true)
                     return
                 }
                 isCancellation(command) -> {
-                    synchronized(pendingSendLock) { pendingSend = null }
-                    say(appContext, "Cancelled. Nothing was sent.")
+                    resolvePendingSend(appContext, false)
                     return
                 }
-                else -> synchronized(pendingSendLock) { pendingSend = null }
+                else -> {
+                    synchronized(pendingSendLock) { pendingSend = null }
+                    ApprovalNotification.dismiss(appContext)
+                }
             }
         }
 
@@ -92,7 +82,13 @@ object NovaCommand {
             synchronized(pendingSendLock) {
                 pendingSend = PendingSend(snapshot.first, snapshot.second, System.currentTimeMillis() + SEND_CONFIRMATION_WINDOW_MS)
             }
-            say(appContext, "I have the message ready in this app. Should I send this exact message now? Say yes or cancel.")
+            ApprovalNotification.show(
+                appContext,
+                title = "Send this message?",
+                details = snapshot.second,
+                expiresInMillis = SEND_CONFIRMATION_WINDOW_MS
+            )
+            say(appContext, "I've shown an approval request. Tap Allow to send this exact message, or Deny to cancel.")
             return
         }
         if (isCapabilityQuestion(command)) {
@@ -220,6 +216,27 @@ object NovaCommand {
         "OPEN_APP", "SEARCH", "WEB_SEARCH", "HOME", "BACK", "SETTINGS",
         "SCROLL_UP", "SCROLL_DOWN", "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO"
     )
+
+    fun resolvePendingSend(context: Context, allow: Boolean) {
+        val approved = synchronized(pendingSendLock) {
+            val current = pendingSend
+            pendingSend = null // consume before any side effect; never reusable
+            current?.takeIf { it.expiresAt >= System.currentTimeMillis() }
+        }
+        ApprovalNotification.dismiss(context)
+        if (!allow) {
+            say(context, "Denied. Nothing was sent.")
+            return
+        }
+        if (approved == null) {
+            say(context, "That approval expired. Nothing was sent.")
+            return
+        }
+        val sent = NovaAccessibilityService.instance
+            ?.clickSendButton(approved.packageName, approved.expectedText) == true
+        say(context, if (sent) "I tapped Send for that message. Please check the app to verify it was sent."
+            else "I didn't send it because the app or message changed. Please review it and ask again.")
+    }
 
     private fun isConfirmation(text: String): Boolean = text in setOf(
         "yes", "yes send", "confirm", "confirm send", "send now", "ஆம்", "ஆமாம்", "சரி", "அனுப்பு"
