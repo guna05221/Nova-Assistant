@@ -20,21 +20,47 @@ object NovaCommand {
         val command = normalize(original)
         if (command.isBlank()) return
 
+        if (AIProviderManager.hasGemini(appContext) || AIProviderManager.hasGroq(appContext)) {
+            say(appContext, "Thinking…")
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val prompt = listOf(
+                    "You are Nova, an Android assistant. Understand English, Tamil and Tanglish.",
+                    "Infer the user's goal. Return exactly JSON: {\"action\":\"ACTION\",\"target\":\"\",\"reply\":\"\"}.",
+                    "Allowed: FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, WEB_SEARCH, OPEN_APP, SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN, COPY_LAST_MESSAGE, PASTE, CONVERSATION, UNSUPPORTED.",
+                    "Use FOOD_SEARCH for hunger and nearby food. Use WEB_SEARCH for current research. Use OPEN_APP for apps.",
+                    "Never claim completion before the action runs. Payments, purchases, messages, deletion and security changes require confirmation.",
+                    "If details are missing, ask one short question using CONVERSATION."
+                ).joinToString("\n")
+                val cloud = AIProviderManager.plan(appContext, prompt, original)
+                val selected = if (cloud.ok) parseAiIntent(cloud.message) else null
+                if (selected != null) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { executeIntent(appContext, selected) }
+                } else if (LocalAiManager.isDownloaded(appContext)) {
+                    LocalAiManager.interpretAsync(appContext, original) { localPlan ->
+                        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        executeIntent(appContext, localPlan?.let { parseAiIntent(it) } ?: understand(command, prefs.getString("last_app", null)))
+                    }
+                } else {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        executeIntent(appContext, understand(command, prefs.getString("last_app", null)))
+                    }
+                }
+            }
+            return
+        }
+
         if (LocalAiManager.isDownloaded(appContext)) {
-            say(appContext, "Nova is understanding your request…")
+            say(appContext, "Thinking…")
             LocalAiManager.interpretAsync(appContext, original) { plan ->
                 val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                val lastApp = prefs.getString("last_app", null)
-                val aiIntent = plan?.let { parseAiIntent(it) }
-                val selected = aiIntent ?: understand(command, lastApp)
-                executeIntent(appContext, selected)
+                executeIntent(appContext, plan?.let { parseAiIntent(it) } ?: understand(command, prefs.getString("last_app", null)))
             }
             return
         }
 
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val lastApp = prefs.getString("last_app", null)
-        executeIntent(appContext, understand(command, lastApp))
+        executeIntent(appContext, understand(command, prefs.getString("last_app", null)))
     }
 
     private fun parseAiIntent(raw: String): BrainIntent? {
