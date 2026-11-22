@@ -74,6 +74,13 @@ object LocalAiManager {
         }
     }
 
+    fun interpretAsync(context: Context, utterance: String, onResult: (String?) -> Unit) {
+        scope.launch {
+            val result = interpret(context.applicationContext, utterance)
+            withContext(Dispatchers.Main) { onResult(result) }
+        }
+    }
+
     suspend fun interpret(context: Context, utterance: String): String? {
         if (!isDownloaded(context)) return null
         return try {
