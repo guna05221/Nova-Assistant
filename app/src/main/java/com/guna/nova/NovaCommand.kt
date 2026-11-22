@@ -20,48 +20,52 @@ object NovaCommand {
         val command = normalize(original)
         if (command.isBlank()) return
 
-        // Handle explicit typing/sending locally before AI intent planning. This prevents
-        // a model from misclassifying "type what is Java" as a normal conversation.
-        val directIntent = understand(command, null)
+        // Enforce transaction safety in app code, not only in an AI prompt.
+        if (isFinancialAction(command)) {
+            say(appContext, "I can explain payment options, but Nova never makes payments, transfers, purchases, subscriptions or paid orders.")
+            return
+        }
+
+        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val directIntent = understand(command, prefs.getString("last_app", null))
         if (directIntent.kind == "TYPE_TEXT" || directIntent.kind == "SEND") {
             executeIntent(appContext, directIntent)
             return
         }
-
-        // Answer capability questions from the real app state, not an unconstrained model guess.
         if (isCapabilityQuestion(command)) {
             say(appContext, capabilityReply(appContext))
+            return
+        }
+
+        // Deterministic phone actions stay separate from natural conversation.
+        if (directIntent.kind != "UNKNOWN" && directIntent.kind != "CONVERSATION") {
+            executeIntent(appContext, directIntent)
             return
         }
 
         if (AIProviderManager.hasGemini(appContext) || AIProviderManager.hasGroq(appContext)) {
             statusOnly(appContext, "Thinking…")
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                val prompt = listOf(
-                    "You are Nova, an Android assistant. Understand English, Tamil and Tanglish.",
-                    "Infer the user's goal. Return exactly JSON: {\"action\":\"ACTION\",\"target\":\"\",\"reply\":\"\"}.",
-                    "IMPORTANT: Answer ordinary questions and requests for explanations, advice, definitions, calculations, jokes, writing, and casual conversation with CONVERSATION and a helpful reply. Do NOT open Chrome or search for these. Use SEARCH/WEB_SEARCH only when the user explicitly says search, Google, look up online, or asks to open a website.",
-                    "If the user explicitly asks to open an app and ask/type a question there, use OPEN_APP for the app only for now; do not pretend to type or send until the app automation confirms it.",
-                    "Allowed: FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, WEB_SEARCH, OPEN_APP, SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN, COPY_LAST_MESSAGE, PASTE, TYPE_TEXT, SEND, CONVERSATION, UNSUPPORTED.",
-                    "Current supported actions: open installed apps and Android Settings, Home, Back, scroll, copy visible text, paste clipboard text, type dictated text into the currently focused editable field, and click a clearly labelled Send/Submit button only after explicit user instruction; Google search and nearby food discovery handoffs are also supported.",
-                    "Conversation and intent planning use configured Gemini/Groq keys, or the downloaded Qwen local model. Do not claim web pages are read, results compared, or tasks completed; searches are handed off to another app.",
-                    "Never claim unsupported abilities such as making calls, reading notifications or private chats, arbitrary app control, booking, ordering food, buying, transferring money, making payments, deleting files, or changing security settings. Accessibility typing/sending works only when the foreground app exposes a focused editable field and a clearly labelled enabled Send/Submit button.",
-                    "Financial transactions and purchases are never allowed, even if the user confirms. Do not place food orders. For unsupported actions, use CONVERSATION and explain the limitation.",
-                    "Never claim completion before the Android action runs. If details are missing, ask one short question using CONVERSATION."
-                ).joinToString("\n")
-                val cloud = AIProviderManager.plan(appContext, prompt, original)
-                val selected = if (cloud.ok) parseAiIntent(cloud.message) else null
-                if (selected != null) {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { executeIntent(appContext, selected) }
+                val history = conversationHistory(appContext, original)
+                val result = AIProviderManager.chat(appContext, history)
+                if (result.ok) {
+                    saveConversation(appContext, original, result.message)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        say(appContext, result.message)
+                    }
                 } else if (LocalAiManager.isDownloaded(appContext)) {
                     LocalAiManager.interpretAsync(appContext, original) { localPlan ->
-                        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                        executeIntent(appContext, localPlan?.let { parseAiIntent(it) } ?: understand(command, prefs.getString("last_app", null)))
+                        val intent = localPlan?.let { parseAiIntent(it) }
+                        if (intent?.kind == "CONVERSATION" && !intent.value.isNullOrBlank()) {
+                            saveConversation(appContext, original, intent.value)
+                            say(appContext, intent.value)
+                        } else {
+                            say(appContext, "My cloud connection is unavailable, and my local model couldn't answer that. Please try again.")
+                        }
                     }
                 } else {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                        executeIntent(appContext, understand(command, prefs.getString("last_app", null)))
+                        say(appContext, "I couldn't reach the AI service. Check your internet connection or configure the local Qwen model.")
                     }
                 }
             }
@@ -69,16 +73,52 @@ object NovaCommand {
         }
 
         if (LocalAiManager.isDownloaded(appContext)) {
-            statusOnly(appContext, "Thinking…")
+            statusOnly(appContext, "Thinking offline…")
             LocalAiManager.interpretAsync(appContext, original) { plan ->
-                val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                executeIntent(appContext, plan?.let { parseAiIntent(it) } ?: understand(command, prefs.getString("last_app", null)))
+                val intent = plan?.let { parseAiIntent(it) }
+                if (intent?.kind == "CONVERSATION" && !intent.value.isNullOrBlank()) {
+                    saveConversation(appContext, original, intent.value)
+                    say(appContext, intent.value)
+                } else if (intent != null && intent.kind != "UNKNOWN") {
+                    executeIntent(appContext, intent)
+                } else {
+                    say(appContext, "I couldn't answer that with the local model. Try configuring Gemini or Groq for stronger conversation.")
+                }
             }
             return
         }
 
-        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        executeIntent(appContext, understand(command, prefs.getString("last_app", null)))
+        if (directIntent.kind == "CONVERSATION") say(appContext, directIntent.value.orEmpty())
+        else say(appContext, "To answer questions and have natural conversations, configure Gemini or Groq, or download the local Qwen model.")
+    }
+
+    private fun isFinancialAction(text: String): Boolean = containsAny(
+        text,
+        "make a payment", "pay my bill", "pay the bill", "pay this bill", "pay now",
+        "send money", "transfer money", "money transfer", "upi payment", "make payment",
+        "buy this", "purchase this", "place an order", "order this", "subscribe now",
+        "pay using", "pay through upi", "recharge my"
+    )
+
+    private fun conversationHistory(context: Context, latest: String): org.json.JSONArray {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val stored = prefs.getString("conversation_history", null)
+        val history = try { if (stored.isNullOrBlank()) org.json.JSONArray() else org.json.JSONArray(stored) }
+            catch (_: Exception) { org.json.JSONArray() }
+        history.put(org.json.JSONObject().put("role", "user").put("content", latest.take(1600)))
+        while (history.length() > 12) history.remove(0)
+        return history
+    }
+
+    private fun saveConversation(context: Context, user: String, answer: String) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val stored = prefs.getString("conversation_history", null)
+        val history = try { if (stored.isNullOrBlank()) org.json.JSONArray() else org.json.JSONArray(stored) }
+            catch (_: Exception) { org.json.JSONArray() }
+        history.put(org.json.JSONObject().put("role", "user").put("content", user.take(1600)))
+        history.put(org.json.JSONObject().put("role", "assistant").put("content", answer.take(2400)))
+        while (history.length() > 12) history.remove(0)
+        prefs.edit().putString("conversation_history", history.toString()).apply()
     }
 
     private fun isCapabilityQuestion(text: String): Boolean = containsAny(
