@@ -23,6 +23,7 @@ class WakeWordService : Service() {
     }
     @Volatile private var active = false
     @Volatile private var speechPaused = false
+    @Volatile private var recognitionActive = false
     private val handler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var recorder: AudioRecord? = null
@@ -57,6 +58,8 @@ class WakeWordService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             active = false
+            speechPaused = false
+            recognitionActive = false
             handler.removeCallbacksAndMessages(null)
             try { recognizer?.cancel() } catch (_: Exception) {}
             try { recorder?.stop() } catch (_: Exception) {}
@@ -120,7 +123,7 @@ class WakeWordService : Service() {
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
             else SpeechRecognizer.createSpeechRecognizer(this)
             recognizer?.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) { report("Listening for Tamil, English and Tanglish. Speak naturally.") }
+                override fun onReadyForSpeech(params: Bundle?) { recognitionActive = true; report("Listening for Tamil, English and Tanglish. Speak naturally.") }
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
@@ -128,16 +131,18 @@ class WakeWordService : Service() {
                 override fun onPartialResults(partialResults: Bundle?) {}
                 override fun onEvent(eventType: Int, params: Bundle?) {}
                 override fun onError(error: Int) {
+                    recognitionActive = false
                     if (active && !speechPaused) handler.postDelayed({ listenAgain() },
                         if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200L else 500L)
                 }
                 override fun onResults(results: Bundle?) {
+                    recognitionActive = false
                     if (!active) return
                     val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
                     if (phrase.isNotBlank()) {
                         val now = SystemClock.elapsedRealtime()
                         val normalized = phrase.lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ").trim()
-                        val isRecentEcho = normalized == lastHandledPhrase && now - lastHandledAt < 8000L
+                        val isRecentEcho = normalized == lastHandledPhrase && now - lastHandledAt < 1200L
                         if (isRecentEcho) {
                             Log.i(TAG, "Ignored repeated recognition within echo window: $phrase")
                         } else {
@@ -159,7 +164,7 @@ class WakeWordService : Service() {
     }
 
     private fun listenAgain() {
-        if (!active || speechPaused) return
+        if (!active || speechPaused || recognitionActive) return
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
@@ -174,13 +179,20 @@ class WakeWordService : Service() {
                 putStringArrayListExtra(RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES, arrayListOf("ta-IN", "en-IN"))
             }
         }
-        try { recognizer?.startListening(intent) }
-        catch (e: Exception) { Log.w(TAG, "startListening retry", e); handler.postDelayed({ listenAgain() }, 1000L) }
+        try {
+            recognitionActive = true
+            recognizer?.startListening(intent)
+        } catch (e: Exception) {
+            recognitionActive = false
+            Log.w(TAG, "startListening retry", e)
+            handler.postDelayed({ listenAgain() }, 1000L)
+        }
     }
 
     private fun pauseRecognitionForSpeech() {
         handler.post {
             speechPaused = true
+            recognitionActive = false
             try { recognizer?.cancel() } catch (_: Exception) {}
         }
     }
@@ -189,6 +201,7 @@ class WakeWordService : Service() {
         handler.postDelayed({
             if (active) {
                 speechPaused = false
+                recognitionActive = false
                 listenAgain()
             }
         }, 500L)
@@ -196,7 +209,7 @@ class WakeWordService : Service() {
 
     override fun onDestroy() {
         if (runningService === this) runningService = null
-        active = false; handler.removeCallbacksAndMessages(null)
+        active = false; speechPaused = false; recognitionActive = false; handler.removeCallbacksAndMessages(null)
         try { recognizer?.cancel() } catch (_: Exception) {}
         try { recognizer?.destroy() } catch (_: Exception) {}
         recognizer = null

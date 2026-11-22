@@ -108,7 +108,7 @@ object AIProviderManager {
         val geminiKey = get(context, GEMINI)
         if (geminiKey.isNotBlank()) {
             try {
-                val parts = JSONArray().put(JSONObject().put("text", systemPrompt + "\\nUser said: " + userText.take(1200) + "\\nReturn one JSON action."))
+                val parts = JSONArray().put(JSONObject().put("text", systemPrompt + "\nUser said: " + userText.take(1200) + "\nReturn one JSON action."))
                 val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", parts)))
                     .put("generationConfig", JSONObject().put("temperature", 0.1).put("maxOutputTokens", 220))
                 val response = request("https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent",
@@ -128,7 +128,7 @@ object AIProviderManager {
                 val body = JSONObject().put("model", GROQ_MODEL).put("temperature", 0.1).put("max_tokens", 220)
                     .put("messages", JSONArray()
                         .put(JSONObject().put("role", "system").put("content", systemPrompt))
-                        .put(JSONObject().put("role", "user").put("content", userText.take(1200) + "\\nReturn one JSON action.")))
+                        .put(JSONObject().put("role", "user").put("content", userText.take(1200) + "\nReturn one JSON action.")))
                 val response = request("https://api.groq.com/openai/v1/chat/completions",
                     "Authorization", "Bearer $groqKey", body.toString())
                 if (response.first in 200..299) {
