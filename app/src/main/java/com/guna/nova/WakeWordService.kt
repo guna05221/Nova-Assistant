@@ -15,6 +15,8 @@ class WakeWordService : Service() {
         const val ACTION_STOP = "com.guna.nova.STOP_LISTENING"
         private const val RATE = 16000
         private const val TAG = "NovaVoice"
+        @Volatile private var lastHandledPhrase: String = ""
+        @Volatile private var lastHandledAt: Long = 0L
     }
     @Volatile private var active = false
     private val handler = Handler(Looper.getMainLooper())
@@ -128,9 +130,18 @@ class WakeWordService : Service() {
                     if (!active) return
                     val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
                     if (phrase.isNotBlank()) {
-                        report("Heard: $phrase")
-                        try { NovaCommand.execute(this@WakeWordService, phrase) }
-                        catch (e: Exception) { Log.e(TAG, "Command failed", e); report("Command failed: ${e.message}") }
+                        val now = SystemClock.elapsedRealtime()
+                        val normalized = phrase.lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ").trim()
+                        val isRecentEcho = normalized == lastHandledPhrase && now - lastHandledAt < 8000L
+                        if (isRecentEcho) {
+                            Log.i(TAG, "Ignored repeated recognition within echo window: $phrase")
+                        } else {
+                            lastHandledPhrase = normalized
+                            lastHandledAt = now
+                            report("Heard: $phrase")
+                            try { NovaCommand.execute(this@WakeWordService, phrase) }
+                            catch (e: Exception) { Log.e(TAG, "Command failed", e); report("Command failed: ${e.message}") }
+                        }
                     }
                     handler.postDelayed({ listenAgain() }, 350L)
                 }
