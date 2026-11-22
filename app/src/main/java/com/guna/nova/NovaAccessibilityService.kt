@@ -102,6 +102,41 @@ class NovaAccessibilityService : AccessibilityService() {
         return focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_PASTE)
     }
 
+
+    /** Types dictated text into the currently focused editable field. */
+    fun typeIntoFocusedField(value: String): Boolean {
+        if (value.isBlank()) return false
+        val root = rootInActiveWindow ?: return false
+        val focused = root.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: return false
+        if (!focused.isEditable) return false
+        val args = android.os.Bundle().apply {
+            putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
+        }
+        return focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
+    /**
+     * Clicks a visible, clearly labelled send/submit control in the foreground app.
+     * It never taps arbitrary coordinates or buttons with unrelated labels.
+     */
+    fun clickSendButton(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val candidates = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (node == null || !node.isVisibleToUser) return
+            val label = listOf(node.text?.toString(), node.contentDescription?.toString())
+                .filterNotNull().joinToString(" ").trim().lowercase()
+            val isSend = label == "send" || label == "send message" ||
+                label == "submit" || label == "send prompt" || label == "send a message"
+            if (isSend && node.isEnabled && node.isClickable) candidates.add(node)
+            for (i in 0 until node.childCount) collect(node.getChild(i))
+        }
+        collect(root)
+        val target = candidates.firstOrNull() ?: return false
+        return target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
     fun back() { performGlobalAction(GLOBAL_ACTION_BACK) }
     fun home() { performGlobalAction(GLOBAL_ACTION_HOME) }
     fun scroll(up: Boolean) {
