@@ -61,6 +61,28 @@ fun AIProviderSettingsCard() {
                         placeholder = { Text(if (groqSaved) "Key already saved — enter to replace" else "Paste Groq key") },
                         visualTransformation = PasswordVisualTransformation()
                     )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(enabled = !busy, onClick = {
+                            if (gemini.isNotBlank()) AIProviderManager.saveGemini(context, gemini)
+                            busy = true
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) { AIProviderManager.testGemini(context) }
+                                status = result.message
+                                geminiSaved = AIProviderManager.hasGemini(context)
+                                busy = false
+                            }
+                        }) { Text("Test Gemini") }
+                        OutlinedButton(enabled = !busy, onClick = {
+                            if (groq.isNotBlank()) AIProviderManager.saveGroq(context, groq)
+                            busy = true
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) { AIProviderManager.testGroq(context) }
+                                status = result.message
+                                groqSaved = AIProviderManager.hasGroq(context)
+                                busy = false
+                            }
+                        }) { Text("Test Groq") }
+                    }
                     Text(status, style = MaterialTheme.typography.bodySmall, color = NovaMuted)
                     if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text("Keys are encrypted with Android Keystore. They are not uploaded to GitHub.", style = MaterialTheme.typography.bodySmall, color = NovaMuted)
