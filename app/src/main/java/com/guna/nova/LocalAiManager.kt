@@ -74,6 +74,44 @@ object LocalAiManager {
         }
     }
 
+
+    /** Natural offline conversation using the downloaded Qwen model. */
+    fun chatAsync(context: Context, history: String, onResult: (String?) -> Unit) {
+        scope.launch {
+            val result = chat(context.applicationContext, history)
+            withContext(Dispatchers.Main) { onResult(result) }
+        }
+    }
+
+    suspend fun chat(context: Context, history: String): String? {
+        if (!isDownloaded(context)) return null
+        return try {
+            val model = loadedModel ?: loadModel(modelFile(context))
+            val systemPrompt = """
+                You are Nova, a helpful private Android voice assistant running locally.
+                Understand English, Tamil and Tanglish. Answer ordinary questions, definitions,
+                explanations, jokes, advice and follow-up questions naturally. Use the conversation
+                history to understand references such as "that", "why", and "tell me more".
+                Speak clearly and use concise but useful answers. Do not repeat the user's question.
+                Do not output JSON or describe your internal reasoning.
+                Never make payments, transfers, purchases, subscriptions, or place paid orders,
+                even if the user confirms. Never claim to perform an Android action.
+            """.trimIndent()
+            Llama.complete(
+                model = model,
+                prompt = history.takeLast(6500),
+                systemPrompt = systemPrompt,
+                maxTokens = 320
+            ).text.trim().takeIf { it.isNotBlank() }
+        } catch (e: Throwable) {
+            mutableState.value = mutableState.value.copy(
+                status = "Local AI conversation error: ${e.message ?: e.javaClass.simpleName}",
+                ready = false
+            )
+            null
+        }
+    }
+
     fun interpretAsync(context: Context, utterance: String, onResult: (String?) -> Unit) {
         scope.launch {
             val result = interpret(context.applicationContext, utterance)
