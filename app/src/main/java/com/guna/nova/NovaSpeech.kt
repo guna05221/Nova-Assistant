@@ -2,23 +2,27 @@ package com.guna.nova
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
 
 /**
- * Shared speech output for Nova. Uses the phone's installed TTS engine and
- * queues the latest response while the engine is initializing.
+ * Single speech output controller. Recognition is paused before TTS and resumed
+ * only after the utterance has completed, preventing Nova from hearing its own voice.
  */
 object NovaSpeech {
     @Volatile private var engine: TextToSpeech? = null
     @Volatile private var ready = false
     @Volatile private var pending: String? = null
+    @Volatile private var initialized = false
 
     @Synchronized
     fun speak(context: Context, message: String) {
         val text = message.trim()
         if (text.isBlank()) return
+        WakeWordService.pauseForSpeech()
         val current = engine
         if (current == null) {
+            pending = text
             engine = TextToSpeech(context.applicationContext) { status ->
                 synchronized(this) {
                     val tts = engine ?: return@synchronized
@@ -27,15 +31,25 @@ object NovaSpeech {
                         ready = language != TextToSpeech.LANG_MISSING_DATA &&
                             language != TextToSpeech.LANG_NOT_SUPPORTED
                         if (!ready) ready = tts.setLanguage(Locale.US) >= TextToSpeech.LANG_AVAILABLE
+                        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                            override fun onStart(utteranceId: String?) {}
+                            override fun onDone(utteranceId: String?) { WakeWordService.resumeAfterSpeech() }
+                            @Deprecated("Deprecated in Java")
+                            override fun onError(utteranceId: String?) { WakeWordService.resumeAfterSpeech() }
+                            override fun onError(utteranceId: String?, errorCode: Int) { WakeWordService.resumeAfterSpeech() }
+                        })
+                        initialized = true
                         val queued = pending
                         pending = null
-                        if (ready && !queued.isNullOrBlank()) {
-                            tts.speak(queued, TextToSpeech.QUEUE_FLUSH, null, "nova-response")
-                        }
+                        if (ready && !queued.isNullOrBlank()) tts.speak(queued, TextToSpeech.QUEUE_FLUSH, null, "nova-response")
+                        else WakeWordService.resumeAfterSpeech()
+                    } else {
+                        initialized = true
+                        pending = null
+                        WakeWordService.resumeAfterSpeech()
                     }
                 }
             }
-            pending = text
             return
         }
         if (!ready) {
@@ -49,6 +63,7 @@ object NovaSpeech {
     fun stop() {
         engine?.stop()
         pending = null
+        WakeWordService.resumeAfterSpeech()
     }
 
     @Synchronized
@@ -57,6 +72,8 @@ object NovaSpeech {
         engine?.shutdown()
         engine = null
         ready = false
+        initialized = false
         pending = null
+        WakeWordService.resumeAfterSpeech()
     }
 }
