@@ -36,7 +36,19 @@ jobs:
           curl -fL --retry 3 "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx" -o app/src/main/assets/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx
           test -s app/libs/sherpa-onnx-2.0.1.aar
           test -s app/src/main/assets/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx
+      - name: Prepare persistent signing key (when configured)
+        if: ${{ secrets.NOVA_KEYSTORE_BASE64 != '' }}
+        env:
+          NOVA_KEYSTORE_BASE64: ${{ secrets.NOVA_KEYSTORE_BASE64 }}
+        run: |
+          echo "$NOVA_KEYSTORE_BASE64" | base64 --decode > app/nova-release.jks
+          test -s app/nova-release.jks
       - name: Build debug APK
+        env:
+          NOVA_KEYSTORE_FILE: ${{ secrets.NOVA_KEYSTORE_BASE64 != '' && 'nova-release.jks' || '' }}
+          NOVA_KEYSTORE_PASSWORD: ${{ secrets.NOVA_KEYSTORE_PASSWORD }}
+          NOVA_KEY_ALIAS: ${{ secrets.NOVA_KEY_ALIAS }}
+          NOVA_KEY_PASSWORD: ${{ secrets.NOVA_KEY_PASSWORD }}
         run: gradle --no-daemon assembleDebug
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
