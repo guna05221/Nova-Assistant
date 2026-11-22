@@ -321,6 +321,8 @@ class MainActivity : ComponentActivity() {
                         }
 
                         Text(
+                        AIProviderSettingsCard()
+
                             "SETUP & HELP",
                             color = NovaMuted,
                             style = MaterialTheme.typography.labelLarge,
