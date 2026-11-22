@@ -142,6 +142,14 @@ object NovaCommand {
                 val pasted = NovaAccessibilityService.instance?.pasteClipboard() == true
                 say(context, if (pasted) "Pasted." else "I couldn't paste. Tap the text box first, then say paste it.")
             }
+            "TYPE_TEXT" -> {
+                val typed = NovaAccessibilityService.instance?.typeIntoFocusedField(intent.value.orEmpty()) == true
+                say(context, if (typed) "Text entered. Say send it when you want me to send it." else "I couldn't find a focused text box. Open the app and tap its message field first.")
+            }
+            "SEND" -> {
+                val sent = NovaAccessibilityService.instance?.clickSendButton() == true
+                say(context, if (sent) "I tapped the visible Send button. Check that the app shows your message as sent." else "I couldn't find an enabled, clearly labelled Send button. I haven't sent anything.")
+            }
             "HOME" -> {
                 val accessibility = NovaAccessibilityService.instance
                 if (accessibility != null) accessibility.home() else {
@@ -200,6 +208,16 @@ object NovaCommand {
             return BrainIntent("FOOD_SEARCH")
         if (t.contains("swiggy")) return BrainIntent("SEARCH_SWIGGY", text)
         if (t.contains("zomato")) return BrainIntent("SEARCH_ZOMATO", text)
+
+        // Explicit voice typing and sending; typing never implies sending.
+        val typePrefixes = listOf("type this ", "type ", "enter text ", "write in the text box ")
+        val typePrefix = typePrefixes.firstOrNull { t.startsWith(it) }
+        if (typePrefix != null) {
+            val dictated = text.substring(typePrefix.length).trim()
+            if (dictated.isNotBlank()) return BrainIntent("TYPE_TEXT", dictated)
+        }
+        if (containsAny(t, "send it", "send this", "send message", "press send", "அனுப்பு", "send pannu", "anuppu"))
+            return BrainIntent("SEND")
 
         // Clipboard commands act on the currently visible app screen.
         if (containsAny(t, "copy the last message", "copy last message", "copy that message", "last message copy", "கடைசி மெசேஜ் காப்பி", "kadaisi message copy", "last message ah copy")) return BrainIntent("COPY_LAST_MESSAGE")
