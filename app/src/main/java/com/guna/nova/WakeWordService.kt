@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 class WakeWordService : Service() {
     companion object {
         const val ACTION_ENROLL = "com.guna.nova.ENROLL_VOICE"
+        const val ACTION_STOP = "com.guna.nova.STOP_LISTENING"
         private const val RATE = 16000
         private const val TAG = "NovaVoice"
     }
@@ -47,8 +48,20 @@ class WakeWordService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            active = false
+            handler.removeCallbacksAndMessages(null)
+            try { recognizer?.cancel() } catch (_: Exception) {}
+            try { recorder?.stop() } catch (_: Exception) {}
+            getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
+                .putBoolean("running", false).putString("status", "Listening stopped.").apply()
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         if (active) return START_NOT_STICKY
         active = true
+        getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
+            .putBoolean("running", true).putString("status", "Starting microphone…").apply()
         if (intent?.action == ACTION_ENROLL) Thread({ enrollVoice() }, "NovaEnrollment").start()
         else if (identity?.isEnrolled() != true) {
             report("Set up your voice profile first. Speaker verification is separate from speech recognition.", false)
