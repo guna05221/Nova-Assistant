@@ -520,6 +520,7 @@ object NovaCommand {
     private fun statusOnly(context: Context, message: String) {
         context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
             .putString("status", message).putBoolean("running", true).apply()
+        NovaOverlayService.status(context, message)
     }
 
     private fun say(context: Context, message: String) {
