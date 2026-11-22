@@ -54,11 +54,10 @@ object NovaCommand {
                         say(appContext, result.message)
                     }
                 } else if (LocalAiManager.isDownloaded(appContext)) {
-                    LocalAiManager.interpretAsync(appContext, original) { localPlan ->
-                        val intent = localPlan?.let { parseAiIntent(it) }
-                        if (intent?.kind == "CONVERSATION" && !intent.value.isNullOrBlank()) {
-                            saveConversation(appContext, original, intent.value)
-                            say(appContext, intent.value)
+                    LocalAiManager.chatAsync(appContext, history.toString()) { localAnswer ->
+                        if (!localAnswer.isNullOrBlank()) {
+                            saveConversation(appContext, original, localAnswer)
+                            say(appContext, localAnswer)
                         } else {
                             say(appContext, "My cloud connection is unavailable, and my local model couldn't answer that. Please try again.")
                         }
@@ -74,13 +73,11 @@ object NovaCommand {
 
         if (LocalAiManager.isDownloaded(appContext)) {
             statusOnly(appContext, "Thinking offline…")
-            LocalAiManager.interpretAsync(appContext, original) { plan ->
-                val intent = plan?.let { parseAiIntent(it) }
-                if (intent?.kind == "CONVERSATION" && !intent.value.isNullOrBlank()) {
-                    saveConversation(appContext, original, intent.value)
-                    say(appContext, intent.value)
-                } else if (intent != null && intent.kind != "UNKNOWN") {
-                    executeIntent(appContext, intent)
+            val history = conversationHistory(appContext, original)
+            LocalAiManager.chatAsync(appContext, history.toString()) { localAnswer ->
+                if (!localAnswer.isNullOrBlank()) {
+                    saveConversation(appContext, original, localAnswer)
+                    say(appContext, localAnswer)
                 } else {
                     say(appContext, "I couldn't answer that with the local model. Try configuring Gemini or Groq for stronger conversation.")
                 }
