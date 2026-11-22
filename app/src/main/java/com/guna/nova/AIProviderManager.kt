@@ -141,6 +141,70 @@ object AIProviderManager {
         return Result(false, "No cloud AI key is configured.")
     }
 
+
+    /**
+     * Natural conversation endpoint. Unlike plan(), this returns plain language and
+     * sends the bounded conversation history so follow-up questions retain context.
+     * Gemini is primary; Groq is the automatic fallback.
+     */
+    fun chat(context: Context, history: JSONArray): Result {
+        val system = "You are Nova, a helpful Android voice assistant. Speak naturally and directly. " +
+            "Understand English, Tamil and Tanglish. Answer questions, explain concepts, tell jokes, " +
+            "and handle follow-ups using the conversation history. Keep spoken answers concise but useful. " +
+            "Do not claim to have performed phone actions unless confirmed by the app. " +
+            "Never make payments, transfers, purchases, subscriptions, or place paid orders, even if confirmed. " +
+            "If asked to do these, politely refuse and offer safe information instead."
+        val geminiKey = get(context, GEMINI)
+        if (geminiKey.isNotBlank()) {
+            try {
+                val contents = JSONArray()
+                for (i in 0 until history.length()) {
+                    val item = history.optJSONObject(i) ?: continue
+                    val role = if (item.optString("role") == "assistant") "model" else "user"
+                    val text = item.optString("content").take(1600)
+                    if (text.isNotBlank()) contents.put(JSONObject().put("role", role)
+                        .put("parts", JSONArray().put(JSONObject().put("text", text))))
+                }
+                val body = JSONObject().put("systemInstruction",
+                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
+                    .put("contents", contents)
+                    .put("generationConfig", JSONObject().put("temperature", 0.65).put("maxOutputTokens", 500))
+                val response = request(
+                    "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent",
+                    "x-goog-api-key", geminiKey, body.toString())
+                if (response.first in 200..299) {
+                    val answer = JSONObject(response.second).getJSONArray("candidates").getJSONObject(0)
+                        .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text").trim()
+                    if (answer.isNotBlank()) return Result(true, answer, "Gemini")
+                } else if (response.first !in listOf(408, 429, 500, 502, 503, 504)) {
+                    return Result(false, "Gemini request failed (HTTP ${response.first}).")
+                }
+            } catch (_: Exception) { /* try Groq fallback */ }
+        }
+        val groqKey = get(context, GROQ)
+        if (groqKey.isNotBlank()) {
+            return try {
+                val messages = JSONArray().put(JSONObject().put("role", "system").put("content", system))
+                for (i in 0 until history.length()) {
+                    val item = history.optJSONObject(i) ?: continue
+                    val role = item.optString("role")
+                    if (role == "user" || role == "assistant") messages.put(
+                        JSONObject().put("role", role).put("content", item.optString("content").take(1600)))
+                }
+                val body = JSONObject().put("model", GROQ_MODEL).put("temperature", 0.65)
+                    .put("max_tokens", 500).put("messages", messages)
+                val response = request("https://api.groq.com/openai/v1/chat/completions",
+                    "Authorization", "Bearer $groqKey", body.toString())
+                if (response.first in 200..299) {
+                    val answer = JSONObject(response.second).getJSONArray("choices").getJSONObject(0)
+                        .getJSONObject("message").getString("content").trim()
+                    Result(answer.isNotBlank(), answer.ifBlank { "I couldn't form an answer just now." }, "Groq")
+                } else Result(false, "Groq request failed (HTTP ${response.first}): ${providerError(response.second)}")
+            } catch (e: Exception) { Result(false, "Groq request failed: ${e.message ?: "network error"}") }
+        }
+        return Result(false, "No cloud AI key is configured.")
+    }
+
     private fun providerError(body: String): String {
         return try {
             val root = JSONObject(body)
