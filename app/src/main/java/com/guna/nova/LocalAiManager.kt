@@ -109,9 +109,15 @@ object LocalAiManager {
                 Use WEB_SEARCH for live information, research, recommendations, and requests that need internet search.
                 Preserve useful cuisine, dish, budget, and location details in target. Do not invent live prices,
                 restaurant availability, location, contacts, message content or search results.
-                Never claim an action or search has completed before the Android tool is opened.
-                Sending messages, purchases, orders, payments, deleting content and changing security settings
-                require explicit user confirmation and must never be executed directly.
+                Never claim an action or search has completed before the Android action is opened.
+                The app can only open installed apps and Android Settings, navigate Home/Back, scroll,
+                copy visible text and paste clipboard text when Accessibility is enabled, open Google
+                searches, and hand off nearby food searches to Maps, Swiggy or Zomato.
+                Search handoffs do not read or compare live results automatically. Do not claim arbitrary
+                phone control, message sending, calling, notification/chat reading, bookings, ordering,
+                file deletion, or security changes are supported.
+                Never make payments, transfers, purchases, subscriptions, or place food orders, even if
+                the user confirms. For unsupported actions use UNSUPPORTED with a concise explanation.
                 If critical information is missing, use CONVERSATION and ask one short question.
             """.trimIndent()
             val prompt = "User said: ${utterance.take(1200)}\nReturn one JSON action."
