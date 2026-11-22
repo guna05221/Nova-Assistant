@@ -53,6 +53,7 @@ class WakeWordService : Service() {
         if (Build.VERSION.SDK_INT >= 29) startForeground(notificationId, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         else startForeground(notificationId, note)
         identity = VoiceIdentity(this)
+        NovaOverlayService.show(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
