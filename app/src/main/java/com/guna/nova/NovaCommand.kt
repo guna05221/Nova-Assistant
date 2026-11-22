@@ -68,6 +68,30 @@ object NovaCommand {
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val directIntent = understand(command, prefs.getString("last_app", null))
 
+        // Screen observation is a read-only request; expose the accessibility snapshot to voice.
+        if (directIntent.kind == "OBSERVE_SCREEN") {
+            val snapshot = NovaAccessibilityService.instance?.observeActiveScreen()
+            val response = if (snapshot == null) {
+                "I can't access the current screen. Please enable Nova's Accessibility Service and keep the target app open."
+            } else {
+                val packageName = snapshot.optString("package", "unknown app")
+                val nodes = snapshot.optJSONArray("nodes")
+                val visible = mutableListOf<String>()
+                if (nodes != null) {
+                    for (i in 0 until nodes.length()) {
+                        val node = nodes.optJSONObject(i) ?: continue
+                        val label = node.optString("text").ifBlank { node.optString("description") }.trim()
+                        if (label.isNotBlank() && label !in visible) visible.add(label)
+                        if (visible.size >= 12) break
+                    }
+                }
+                if (visible.isEmpty()) "I can see the app ($packageName), but it isn't exposing readable screen text."
+                else "Here's what I can read on the current screen ($packageName): " + visible.joinToString(". ").take(900)
+            }
+            say(appContext, response)
+            return
+        }
+
         // Typing is an ordinary action. Sending always needs fresh approval.
         if (directIntent.kind == "TYPE_TEXT") {
             executeIntent(appContext, directIntent)
@@ -432,6 +456,12 @@ object NovaCommand {
         // Clipboard commands act on the currently visible app screen.
         if (containsAny(t, "copy the last message", "copy last message", "copy that message", "last message copy", "கடைசி மெசேஜ் காப்பி", "kadaisi message copy", "last message ah copy")) return BrainIntent("COPY_LAST_MESSAGE")
         if (containsAny(t, "paste it", "paste that", "paste the message", "paste", "இத ஒட்டு", "ஒட்டு", "paste pannu", "adha paste pannu", "paste pannunga")) return BrainIntent("PASTE")
+
+        // Explicit read-only request to describe the active screen.
+        if (containsAny(t, "observe my current screen", "read my screen", "what is visible",
+                "tell me what is on my screen", "describe the screen", "screen la enna irukku",
+                "என் ஸ்கிரீனில் என்ன இருக்கிறது", "திரையில் என்ன தெரிகிறது"))
+            return BrainIntent("OBSERVE_SCREEN")
 
         // English, common Tamil-script and Tanglish expressions.
         if (containsAny(t, "go home", "go to home", "home screen", "home page", "take me home",
