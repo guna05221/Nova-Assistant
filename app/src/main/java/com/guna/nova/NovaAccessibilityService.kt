@@ -172,6 +172,104 @@ class NovaAccessibilityService : AccessibilityService() {
         return target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
     }
 
+
+    /**
+     * Returns a transient, bounded description of the currently visible UI.
+     * Password fields are never read. The snapshot is not persisted or logged.
+     * The AI planner can use this as observation data before selecting a tool.
+     */
+    fun observeActiveScreen(maxNodes: Int = 100): org.json.JSONObject? {
+        val root = rootInActiveWindow ?: return null
+        val nodes = org.json.JSONArray()
+        var visited = 0
+        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?, depth: Int) {
+            if (node == null || visited >= maxNodes || depth > 18 || !node.isVisibleToUser) return
+            visited++
+            val text = if (node.isPassword) "" else node.text?.toString()?.trim().orEmpty()
+            val description = if (node.isPassword) "" else node.contentDescription?.toString()?.trim().orEmpty()
+            if (text.isNotBlank() || description.isNotBlank() || node.isClickable || node.isEditable) {
+                val rect = android.graphics.Rect()
+                node.getBoundsInScreen(rect)
+                nodes.put(org.json.JSONObject().apply {
+                    put("text", text.take(300))
+                    put("description", description.take(200))
+                    put("class", node.className?.toString().orEmpty().take(120))
+                    put("clickable", node.isClickable)
+                    put("editable", node.isEditable)
+                    put("enabled", node.isEnabled)
+                    put("selected", node.isSelected)
+                    put("bounds", org.json.JSONObject().apply {
+                        put("left", rect.left); put("top", rect.top)
+                        put("right", rect.right); put("bottom", rect.bottom)
+                    })
+                })
+            }
+            for (index in 0 until node.childCount) collect(node.getChild(index), depth + 1)
+        }
+        collect(root, 0)
+        return org.json.JSONObject().apply {
+            put("package", root.packageName?.toString().orEmpty())
+            put("window", root.className?.toString().orEmpty())
+            put("nodes", nodes)
+            put("truncated", visited >= maxNodes)
+        }
+    }
+
+    /**
+     * Clicks only a uniquely matching visible, enabled accessibility element.
+     * Ambiguous matches are rejected rather than guessing.
+     */
+    fun clickVisibleElement(query: String): Boolean {
+        val normalized = query.trim().lowercase(java.util.Locale.ROOT)
+        if (normalized.isBlank()) return false
+        val root = rootInActiveWindow ?: return false
+        val matches = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (node == null || !node.isVisibleToUser) return
+            val labels = listOf(node.text?.toString(), node.contentDescription?.toString())
+                .filterNotNull().map { it.trim().lowercase(java.util.Locale.ROOT) }.filter { it.isNotBlank() }
+            if (node.isEnabled && labels.any { it == normalized }) matches.add(node)
+            for (index in 0 until node.childCount) collect(node.getChild(index))
+        }
+        collect(root)
+        if (matches.size != 1) return false
+        val target = matches.single()
+        if (target.isClickable && target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) return true
+        var parent = target.parent
+        var depth = 0
+        while (parent != null && depth++ < 4) {
+            if (parent.isVisibleToUser && parent.isEnabled && parent.isClickable) {
+                if (parent.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) return true
+            }
+            parent = parent.parent
+        }
+        return false
+    }
+
+    /** Focuses a uniquely matching visible editable field and enters supplied text. */
+    fun typeIntoElement(query: String, value: String): Boolean {
+        if (value.isBlank()) return false
+        val normalized = query.trim().lowercase(java.util.Locale.ROOT)
+        if (normalized.isBlank()) return false
+        val root = rootInActiveWindow ?: return false
+        val matches = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
+        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (node == null || !node.isVisibleToUser) return
+            val labels = listOf(node.text?.toString(), node.contentDescription?.toString())
+                .filterNotNull().map { it.trim().lowercase(java.util.Locale.ROOT) }
+            if (node.isEditable && node.isEnabled && labels.any { it == normalized }) matches.add(node)
+            for (index in 0 until node.childCount) collect(node.getChild(index))
+        }
+        collect(root)
+        if (matches.size != 1) return false
+        val target = matches.single()
+        target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_FOCUS)
+        val args = android.os.Bundle().apply {
+            putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
+        }
+        return target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }
+
     fun back() { performGlobalAction(GLOBAL_ACTION_BACK) }
     fun home() { performGlobalAction(GLOBAL_ACTION_HOME) }
     fun scroll(up: Boolean) {
