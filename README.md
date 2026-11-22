@@ -29,3 +29,11 @@ Install the generated debug APK. Grant microphone and notification permissions. 
 
 ## Safety
 Accessibility is powerful. Nova does not silently send messages, make purchases, delete files or execute arbitrary actions. Keep user confirmation for sensitive actions.
+
+
+## On-device AI model
+- Local inference uses the llama.cpp Android AAR; model weights are downloaded separately into app-private storage.
+- The current balanced profile is Qwen3.5 4B Q4_K_M (about 3.03 GB), with a 2,048-token context and CPU/NEON inference.
+- Open Nova and choose **Download & activate local AI**. The first download needs Wi-Fi and several GB of free storage; subsequent inference runs offline.
+- On an 8 GB phone, close other heavy apps before loading. Actual speed and memory use must be validated on the physical device.
+- Once loaded, spoken commands are sent to the local model for structured intent planning. Only the explicitly allow-listed phone actions are executed. Message sending and other sensitive actions remain unsupported in this build.
