@@ -129,8 +129,34 @@ class NovaAccessibilityService : AccessibilityService() {
      * Clicks a visible, clearly labelled send/submit control in the foreground app.
      * It never taps arbitrary coordinates or buttons with unrelated labels.
      */
-    fun clickSendButton(): Boolean {
+    /**
+     * Captures the foreground package and exact editable-field text before asking for approval.
+     * This is an in-memory snapshot only; it is never written to preferences or logs.
+     */
+    fun currentSendContext(): Pair<String, String>? {
+        val root = rootInActiveWindow ?: return null
+        val focused = root.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)
+        val editable = if (focused?.isEditable == true) focused else {
+            var found: android.view.accessibility.AccessibilityNodeInfo? = null
+            fun find(node: android.view.accessibility.AccessibilityNodeInfo?) {
+                if (node == null || found != null || !node.isVisibleToUser || !node.isEnabled) return
+                if (node.isEditable) { found = node; return }
+                for (i in 0 until node.childCount) find(node.getChild(i))
+            }
+            find(root)
+            found
+        } ?: return null
+        val text = editable.text?.toString()?.trim().orEmpty()
+        val packageName = root.packageName?.toString()?.takeIf { it.isNotBlank() } ?: return null
+        if (text.isBlank()) return null
+        return packageName to text
+    }
+
+    fun clickSendButton(expectedPackage: String, expectedText: String): Boolean {
         val root = rootInActiveWindow ?: return false
+        if (root.packageName?.toString() != expectedPackage) return false
+        val current = currentSendContext() ?: return false
+        if (current.first != expectedPackage || current.second != expectedText) return false
         val candidates = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
         fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
             if (node == null || !node.isVisibleToUser) return
