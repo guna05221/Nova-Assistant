@@ -22,7 +22,7 @@ object AIProviderManager {
     private const val GEMINI = "gemini"
     private const val GROQ = "groq"
     private const val KEY_ALIAS = "nova_ai_credentials_v1"
-    private const val GEMINI_MODEL = "gemini-2.5-flash"
+    private const val GEMINI_MODEL = "gemini-3.5-flash-lite"
     private const val GROQ_MODEL = "openai/gpt-oss-20b"
 
     data class Result(val ok: Boolean, val message: String, val provider: String? = null)
