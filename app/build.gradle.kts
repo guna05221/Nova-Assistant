@@ -13,6 +13,24 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
+    signingConfigs {
+        create("persistent") {
+            val storeFilePath = System.getenv("NOVA_KEYSTORE_FILE")
+            if (!storeFilePath.isNullOrBlank()) {
+                storeFile = file(storeFilePath)
+                storePassword = System.getenv("NOVA_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("NOVA_KEY_ALIAS")
+                keyPassword = System.getenv("NOVA_KEY_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            if (!System.getenv("NOVA_KEYSTORE_FILE").isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("persistent")
+            }
+        }
+    }
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
