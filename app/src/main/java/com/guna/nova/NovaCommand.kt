@@ -32,6 +32,8 @@ object NovaCommand {
                 val prompt = listOf(
                     "You are Nova, an Android assistant. Understand English, Tamil and Tanglish.",
                     "Infer the user's goal. Return exactly JSON: {\"action\":\"ACTION\",\"target\":\"\",\"reply\":\"\"}.",
+                    "IMPORTANT: Answer ordinary questions and requests for explanations, advice, definitions, calculations, jokes, writing, and casual conversation with CONVERSATION and a helpful reply. Do NOT open Chrome or search for these. Use SEARCH/WEB_SEARCH only when the user explicitly says search, Google, look up online, or asks to open a website.",
+                    "If the user explicitly asks to open an app and ask/type a question there, use OPEN_APP for the app only for now; do not pretend to type or send until the app automation confirms it.",
                     "Allowed: FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, WEB_SEARCH, OPEN_APP, SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN, COPY_LAST_MESSAGE, PASTE, CONVERSATION, UNSUPPORTED.",
                     "Current supported actions only: open installed apps, open Android Settings, Home, Back, scroll, copy visible text and paste clipboard text when Nova Accessibility is enabled, Google web search, nearby food discovery via Maps, and opening Swiggy/Zomato search.",
                     "Conversation and intent planning use configured Gemini/Groq keys, or the downloaded Qwen local model. Do not claim web pages are read, results compared, or tasks completed; searches are handed off to another app.",
@@ -256,7 +258,8 @@ object NovaCommand {
     private fun say(context: Context, message: String) {
         context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
             .putString("status", message).putBoolean("running", true).apply()
-        // Main screen displays status; avoid a disruptive popup for every utterance.
+        NovaSpeech.speak(context, message)
+        // The main screen also displays status; speech output is handled by NovaSpeech.
     }
 
     private fun openApp(context: Context, label: String): Boolean {
