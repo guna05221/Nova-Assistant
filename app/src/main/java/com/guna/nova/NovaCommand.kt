@@ -35,7 +35,7 @@ object NovaCommand {
         }
 
         if (AIProviderManager.hasGemini(appContext) || AIProviderManager.hasGroq(appContext)) {
-            say(appContext, "Thinking…")
+            statusOnly(appContext, "Thinking…")
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 val prompt = listOf(
                     "You are Nova, an Android assistant. Understand English, Tamil and Tanglish.",
@@ -69,7 +69,7 @@ object NovaCommand {
         }
 
         if (LocalAiManager.isDownloaded(appContext)) {
-            say(appContext, "Thinking…")
+            statusOnly(appContext, "Thinking…")
             LocalAiManager.interpretAsync(appContext, original) { plan ->
                 val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 executeIntent(appContext, plan?.let { parseAiIntent(it) } ?: understand(command, prefs.getString("last_app", null)))
@@ -279,6 +279,11 @@ object NovaCommand {
     private fun remember(context: Context, action: String, value: String?) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString("last_action", action).putString("last_app", value).apply()
+    }
+
+    private fun statusOnly(context: Context, message: String) {
+        context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
+            .putString("status", message).putBoolean("running", true).apply()
     }
 
     private fun say(context: Context, message: String) {
