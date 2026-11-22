@@ -53,8 +53,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             var running by remember { mutableStateOf(false) }
             var status by remember { mutableStateOf("Ready when you are") }
+            val localAi by LocalAiManager.state.collectAsState()
 
             LaunchedEffect(Unit) {
+                LocalAiManager.loadIfPresent(this@MainActivity)
                 while (true) {
                     val prefs = getSharedPreferences("nova_diagnostics", MODE_PRIVATE)
                     status = prefs.getString("status", "Ready when you are") ?: "Ready when you are"
@@ -260,6 +262,59 @@ class MainActivity : ComponentActivity() {
                             title = "Write or draft content",
                             description = "Try: “Write a birthday message” or “Draft an email”."
                         )
+
+                        Text(
+                            "LOCAL AI BRAIN",
+                            color = NovaMuted,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = NovaPanel.copy(alpha = 0.96f)),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(9.dp)
+                            ) {
+                                Text("Qwen3.5 4B · Q4_K_M", color = Color.White, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "About 3.03 GB download. Runs on this phone using its CPU; no AI API key or cloud inference.",
+                                    color = NovaMuted,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(localAi.status, color = NovaMint, style = MaterialTheme.typography.bodySmall)
+                                if (localAi.downloading || localAi.progress > 0f) {
+                                    LinearProgressIndicator(
+                                        progress = { localAi.progress },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = NovaMint
+                                    )
+                                }
+                                Button(
+                                    onClick = { LocalAiManager.downloadAndLoad(this@MainActivity) },
+                                    enabled = !localAi.downloading && !localAi.ready,
+                                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                                    shape = RoundedCornerShape(15.dp)
+                                ) {
+                                    Text(
+                                        when {
+                                            localAi.ready -> "Local AI ready"
+                                            localAi.downloading -> "Downloading / loading…"
+                                            LocalAiManager.isDownloaded(this@MainActivity) -> "Load local AI"
+                                            else -> "Download & activate local AI"
+                                        },
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    "Keep at least 4 GB of free storage. On 8 GB RAM, close other heavy apps before loading the model. First setup needs Wi-Fi; later inference is offline.",
+                                    color = NovaMuted,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
 
                         Text(
                             "SETUP & HELP",
