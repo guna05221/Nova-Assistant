@@ -15,14 +15,56 @@ object NovaCommand {
     private const val PREFS = "nova_brain"
 
     fun execute(context: Context, raw: String) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val appContext = context.applicationContext
         val original = raw.trim()
         val command = normalize(original)
         if (command.isBlank()) return
 
-        val lastApp = prefs.getString("last_app", null)
-        val intent = understand(command, lastApp)
+        if (LocalAiManager.isDownloaded(appContext)) {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                say(appContext, "Nova is understanding your request…")
+            }
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+                val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                val lastApp = prefs.getString("last_app", null)
+                val plan = LocalAiManager.interpret(appContext, original)
+                val aiIntent = plan?.let { parseAiIntent(it) }
+                val selected = aiIntent ?: understand(command, lastApp)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    executeIntent(appContext, selected)
+                }
+            }
+            return
+        }
 
+        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val lastApp = prefs.getString("last_app", null)
+        executeIntent(appContext, understand(command, lastApp))
+    }
+
+    private fun parseAiIntent(raw: String): BrainIntent? {
+        return try {
+            val first = raw.indexOf('{')
+            val last = raw.lastIndexOf('}')
+            if (first < 0 || last <= first) return null
+            val json = org.json.JSONObject(raw.substring(first, last + 1))
+            val action = json.optString("action", "UNSUPPORTED").uppercase(Locale.ROOT)
+            val target = json.optString("target").takeIf { it.isNotBlank() }
+            val reply = json.optString("reply").takeIf { it.isNotBlank() }
+            when (action) {
+                "OPEN_APP", "SEARCH", "HOME", "BACK", "SETTINGS", "SCROLL_UP",
+                "SCROLL_DOWN", "COPY_LAST_MESSAGE", "PASTE" -> BrainIntent(action, target)
+                "CONVERSATION" -> BrainIntent("CONVERSATION", reply ?: "Tell me a little more about what you want me to do.")
+                "UNSUPPORTED", "SEND_MESSAGE", "PAYMENT", "DELETE" ->
+                    BrainIntent("CONVERSATION", reply ?: "I can't perform that action yet.")
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun executeIntent(context: Context, intent: BrainIntent) {
         when (intent.kind) {
             "COPY_LAST_MESSAGE" -> {
                 val service = NovaAccessibilityService.instance
@@ -59,15 +101,16 @@ object NovaCommand {
             "SCROLL_UP" -> NovaAccessibilityService.instance?.scroll(true)
             "OPEN_APP" -> {
                 val app = intent.value.orEmpty()
-                if (!openApp(context, app)) say(context, "I couldn't find $app on this phone. Which app did you mean?")
+                if (app.isBlank() || !openApp(context, app)) say(context, "I couldn't find ${app.ifBlank { "that app" }} on this phone.")
                 else remember(context, "OPEN_APP", app)
             }
             "SEARCH" -> {
-                search(context, intent.value.orEmpty())
-                remember(context, "SEARCH", intent.value)
+                val query = intent.value.orEmpty()
+                if (query.isBlank()) say(context, "What should I search for?")
+                else { search(context, query); remember(context, "SEARCH", query) }
             }
             "CONVERSATION" -> say(context, intent.value ?: "I'm listening. Tell me what you'd like me to do.")
-            else -> say(context, "I heard: $original. I don't understand the action yet, so I won't open a browser. You can say open an app, go home, settings, or search for something.")
+            else -> say(context, "I couldn't understand that request. Please say it another way.")
         }
     }
 
