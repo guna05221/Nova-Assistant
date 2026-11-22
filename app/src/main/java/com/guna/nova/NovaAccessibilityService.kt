@@ -103,17 +103,26 @@ class NovaAccessibilityService : AccessibilityService() {
     }
 
 
-    /** Types dictated text into the currently focused editable field. */
+    /** Types dictated text into the focused field, or safely finds and focuses a visible editable field. */
     fun typeIntoFocusedField(value: String): Boolean {
         if (value.isBlank()) return false
         val root = rootInActiveWindow ?: return false
         val focused = root.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)
-            ?: return false
-        if (!focused.isEditable) return false
+        val target = if (focused?.isEditable == true) focused else {
+            var found: android.view.accessibility.AccessibilityNodeInfo? = null
+            fun findEditable(node: android.view.accessibility.AccessibilityNodeInfo?) {
+                if (node == null || found != null || !node.isVisibleToUser || !node.isEnabled) return
+                if (node.isEditable) { found = node; return }
+                for (i in 0 until node.childCount) findEditable(node.getChild(i))
+            }
+            findEditable(root)
+            found
+        } ?: return false
+        if (!target.isFocused) target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_FOCUS)
         val args = android.os.Bundle().apply {
             putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
         }
-        return focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        return target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
     /**
