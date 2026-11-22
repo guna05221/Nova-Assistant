@@ -35,6 +35,7 @@ class WakeWordService : Service() {
         Log.i(TAG, message)
         getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
             .putString("status", message).putBoolean("running", running).apply()
+        NovaOverlayService.status(this, message)
         getSystemService(NotificationManager::class.java).notify(notificationId, notification(message))
     }
     private fun notification(message: String) = NotificationCompat.Builder(this, channel)
