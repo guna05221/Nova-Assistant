@@ -90,7 +90,7 @@ object AIProviderManager {
         if (key.isBlank()) return Result(false, "Add your Groq API key first.")
         return try {
             val body = chatBody("Reply with exactly: Groq connection successful")
-            val response = request("https://api.groq.com/openai/v1/chat/completions", "Authorization", "Bearer $key", body)
+            val response = request("https://api.groq.com/openai/v1/chat/completions", "Authorization", "Bearer $key", body.toString())
             if (response.first in 200..299) Result(true, "Groq connected successfully.", "Groq")
             else Result(false, "Groq returned HTTP ${response.first}. Check the key, model access or quota.")
         } catch (e: Exception) { Result(false, "Groq test failed: ${e.message ?: "network error"}") }
