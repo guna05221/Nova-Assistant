@@ -34,7 +34,7 @@ object NovaCommand {
                     "Infer the user's goal. Return exactly JSON: {\"action\":\"ACTION\",\"target\":\"\",\"reply\":\"\"}.",
                     "IMPORTANT: Answer ordinary questions and requests for explanations, advice, definitions, calculations, jokes, writing, and casual conversation with CONVERSATION and a helpful reply. Do NOT open Chrome or search for these. Use SEARCH/WEB_SEARCH only when the user explicitly says search, Google, look up online, or asks to open a website.",
                     "If the user explicitly asks to open an app and ask/type a question there, use OPEN_APP for the app only for now; do not pretend to type or send until the app automation confirms it.",
-                    "Allowed: FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, WEB_SEARCH, OPEN_APP, SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN, COPY_LAST_MESSAGE, PASTE, CONVERSATION, UNSUPPORTED.",
+                    "Allowed: FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, WEB_SEARCH, OPEN_APP, SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN, COPY_LAST_MESSAGE, PASTE, TYPE_TEXT, SEND, CONVERSATION, UNSUPPORTED.",
                     "Current supported actions: open installed apps and Android Settings, Home, Back, scroll, copy visible text, paste clipboard text, type dictated text into the currently focused editable field, and click a clearly labelled Send/Submit button only after explicit user instruction; Google search and nearby food discovery handoffs are also supported.",
                     "Conversation and intent planning use configured Gemini/Groq keys, or the downloaded Qwen local model. Do not claim web pages are read, results compared, or tasks completed; searches are handed off to another app.",
                     "Never claim unsupported abilities such as making calls, reading notifications or private chats, arbitrary app control, booking, ordering food, buying, transferring money, making payments, deleting files, or changing security settings. Accessibility typing/sending works only when the foreground app exposes a focused editable field and a clearly labelled enabled Send/Submit button.",
@@ -99,7 +99,7 @@ object NovaCommand {
             • Copy visible text and paste clipboard text when Nova Accessibility is enabled.
             • Have AI-assisted conversations and plan supported actions. $aiMode
 
-            Important limits: I don't send messages, make phone calls, read chats or notifications, place food orders, book services, make purchases or payments, transfer money, delete files, or change security settings. Search handoffs open another app; I don't yet read and compare its live results automatically.
+            Important limits: I can type into a focused text field and tap a clearly labelled Send button only when you explicitly tell me to send. I don't make phone calls, read private chats or notifications, place food orders, book services, make purchases or payments, transfer money, delete files, or change security settings. Search handoffs open another app; I don't yet read and compare its live results automatically.
             """.trimIndent()
     }
 
