@@ -287,7 +287,7 @@ class MainActivity : ComponentActivity() {
                                 Text(localAi.status, color = NovaMint, style = MaterialTheme.typography.bodySmall)
                                 if (localAi.downloading || localAi.progress > 0f) {
                                     LinearProgressIndicator(
-                                        progress = { localAi.progress },
+                                        progress = localAi.progress,
                                         modifier = Modifier.fillMaxWidth(),
                                         color = NovaMint
                                     )
