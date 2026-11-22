@@ -46,3 +46,10 @@ Accessibility is powerful. Nova does not silently send messages, make purchases,
 - Added Android coarse/fine location permission requests. The phone user must grant location access for location-aware results.
 - Safety boundary: Nova can open searches and apps, but cannot place food orders, send messages, or pay without a separate explicit confirmation flow.
 - Current milestone is an initial agent-tool integration, not a complete autonomous multi-step agent. Search results are shown by the destination app/site; Nova does not yet scrape or compare live restaurant listings itself. Generic online research, robust tool chaining, verified execution, conversational memory, and expanded app integrations remain subsequent milestones.
+
+
+## Cloud backend foundation (development only)
+- Vercel Function routes are scaffolded under `api/`: health, pairing session, and authenticated chat.
+- Server-side OpenAI Responses API integration is disabled by default. No provider request is sent until `NOVA_CLOUD_AI_ENABLED=true` and server environment variables are configured.
+- See [BACKEND_SETUP.md](BACKEND_SETUP.md) for local configuration and limitations, and [CLOUD_AI_ARCHITECTURE.md](CLOUD_AI_ARCHITECTURE.md) for the target design.
+- No Vercel project has been created or deployed. No provider key or paid resource has been created.
