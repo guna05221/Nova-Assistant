@@ -140,3 +140,12 @@ When there is no network, the app must not pretend cloud reasoning is available.
 ## Current repository status
 
 The Android project currently contains local llama.cpp integration and an initial allow-listed food/search handoff. This document specifies the target cloud architecture; it does not mean a backend, provider account, API key, cloud deployment, billing controls, or cloud conversation flow has already been implemented. Those require a provider and hosting deployment decision. The local model integration should remain in place until the cloud path is built, tested, and verified; it can then be removed or retained as an optional future fallback.
+
+
+## Provider decision update — November 2026
+
+The selected initial cloud providers are Google Gemini as primary and Groq as fallback. Both are configured through server-side provider adapters in `lib/server/providers.ts`; provider keys are never shipped in the Android app. Provider IDs are configured independently through `NOVA_GEMINI_MODEL` and `NOVA_GROQ_MODEL`.
+
+The backend chat route now attempts Gemini first and falls back to Groq only for temporary failures and quota/rate-limit responses. If neither provider is configured or available, Nova should use the existing on-device experience. Free-tier availability and quotas are provider-controlled and are not unlimited or guaranteed.
+
+Implementation status: provider adapters and backend routing are committed, but cloud AI remains disabled by default. Android-to-cloud integration, durable quota accounting, device pairing hardening, automated backend tests, and deployment remain outstanding. No provider API calls, API keys, Vercel deployment, or paid resources have been created.
