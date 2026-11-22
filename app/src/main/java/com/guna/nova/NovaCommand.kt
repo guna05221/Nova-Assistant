@@ -21,6 +21,16 @@ object NovaCommand {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestSequence = AtomicLong(0L)
 
+    // One in-memory, one-time approval. Never persisted and never reusable.
+    private data class PendingSend(
+        val packageName: String,
+        val expectedText: String,
+        val expiresAt: Long
+    )
+    @Volatile private var pendingSend: PendingSend? = null
+    private val pendingSendLock = Any()
+    private const val SEND_CONFIRMATION_WINDOW_MS = 20_000L
+
     fun execute(context: Context, raw: String) {
         val appContext = context.applicationContext
         val original = raw.trim()
@@ -29,18 +39,60 @@ object NovaCommand {
 
         val requestId = requestSequence.incrementAndGet()
 
-        // Transaction safety is enforced before any model sees the request.
+        // Financial actions are permanently blocked before confirmation or AI routing.
         if (isFinancialAction(command)) {
-            say(appContext, "I can explain payment options, but Nova never makes payments, transfers, purchases, subscriptions, recharges or paid orders.")
+            synchronized(pendingSendLock) { pendingSend = null }
+            say(appContext, "I can explain payment options, but Nova permanently blocks payments, transfers, purchases, subscriptions, recharges and paid orders.")
             return
+        }
+
+        // Resolve or invalidate a pending one-time approval before interpreting a new command.
+        val pending = synchronized(pendingSendLock) { pendingSend }
+        if (pending != null) {
+            when {
+                isConfirmation(command) -> {
+                    val approved = synchronized(pendingSendLock) {
+                        val current = pendingSend
+                        pendingSend = null // consume before executing; prevents replay/double-send
+                        current?.takeIf { it.expiresAt >= System.currentTimeMillis() }
+                    }
+                    if (approved == null) {
+                        say(appContext, "That approval expired. Please ask me to send it again if you still want to.")
+                    } else {
+                        val service = NovaAccessibilityService.instance
+                        val sent = service?.clickSendButton(approved.packageName, approved.expectedText) == true
+                        say(appContext, if (sent) "I tapped Send for that message. Please check the app to verify it was sent."
+                            else "I didn't send it because the app or message changed. Please review it and ask again.")
+                    }
+                    return
+                }
+                isCancellation(command) -> {
+                    synchronized(pendingSendLock) { pendingSend = null }
+                    say(appContext, "Cancelled. Nothing was sent.")
+                    return
+                }
+                else -> synchronized(pendingSendLock) { pendingSend = null }
+            }
         }
 
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val directIntent = understand(command, prefs.getString("last_app", null))
 
-        // These actions require explicit user wording and are never inferred by an AI model.
-        if (directIntent.kind == "TYPE_TEXT" || directIntent.kind == "SEND") {
+        // Typing is an ordinary action. Sending always needs fresh approval.
+        if (directIntent.kind == "TYPE_TEXT") {
             executeIntent(appContext, directIntent)
+            return
+        }
+        if (directIntent.kind == "SEND") {
+            val snapshot = NovaAccessibilityService.instance?.currentSendContext()
+            if (snapshot == null || snapshot.second.isBlank()) {
+                say(appContext, "I couldn't verify a message in the current text field. Nothing was sent.")
+                return
+            }
+            synchronized(pendingSendLock) {
+                pendingSend = PendingSend(snapshot.first, snapshot.second, System.currentTimeMillis() + SEND_CONFIRMATION_WINDOW_MS)
+            }
+            say(appContext, "I have the message ready in this app. Should I send this exact message now? Say yes or cancel.")
             return
         }
         if (isCapabilityQuestion(command)) {
@@ -169,12 +221,24 @@ object NovaCommand {
         "SCROLL_UP", "SCROLL_DOWN", "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO"
     )
 
+    private fun isConfirmation(text: String): Boolean = text in setOf(
+        "yes", "yes send", "confirm", "confirm send", "send now", "ஆம்", "ஆமாம்", "சரி", "அனுப்பு"
+    )
+
+    private fun isCancellation(text: String): Boolean = text in setOf(
+        "no", "cancel", "cancel it", "stop", "don't send", "do not send",
+        "வேண்டாம்", "நிறுத்து", "அனுப்ப வேண்டாம்"
+    )
+
     private fun isFinancialAction(text: String): Boolean = containsAny(
         text,
-        "make a payment", "pay my bill", "pay the bill", "pay this bill", "pay now",
-        "send money", "transfer money", "money transfer", "upi payment", "make payment",
-        "buy this", "purchase this", "place an order", "order this", "subscribe now",
-        "pay using", "pay through upi", "recharge my"
+        "make a payment", "make payment", "pay my bill", "pay the bill", "pay this bill",
+        "pay now", "pay bill", "bill payment", "send money", "transfer money", "money transfer",
+        "upi payment", "pay using", "pay through upi", "buy this", "buy it", "purchase this",
+        "purchase it", "checkout", "place an order", "order this", "order it", "subscribe now",
+        "start subscription", "recharge my", "recharge phone", "mobile recharge",
+        "பணம் அனுப்பு", "பணம் செலுத்து", "பணம் கட்டு", "ரீசார்ஜ் செய்", "வாங்கு", "ஆர்டர் செய்",
+        "panam anuppu", "panam seluthu", "panam kattu", "recharge pannu", "order pannu", "vaangi kudu"
     )
 
     private fun conversationHistory(context: Context, latest: String): org.json.JSONArray {
@@ -224,7 +288,7 @@ object NovaCommand {
             • Copy visible text and paste clipboard text when Nova Accessibility is enabled.
             • Have AI-assisted conversations and plan supported actions. $aiMode
 
-            Important limits: I can type into a focused text field and tap a clearly labelled Send button only when you explicitly tell me to send. I don't make phone calls, read private chats or notifications, place food orders, book services, make purchases or payments, transfer money, delete files, or change security settings. Search handoffs open another app; I don't yet read and compare its live results automatically.
+            Safety: typing text is immediate. Sending a message requires a fresh, one-time approval for that exact visible message; approval expires and is never reused. Payments, money transfers, purchases, subscriptions, recharges and paid orders are permanently blocked. Other sensitive actions are not advertised until their specific workflow is implemented. Search handoffs open another app; I don't yet read and compare its live results automatically.
             """.trimIndent()
     }
 
@@ -272,8 +336,8 @@ object NovaCommand {
                 say(context, if (typed) "Text entered. Say send it when you want me to send it." else "I couldn't find a focused text box. Open the app and tap its message field first.")
             }
             "SEND" -> {
-                val sent = NovaAccessibilityService.instance?.clickSendButton() == true
-                say(context, if (sent) "I tapped the visible Send button. Check that the app shows your message as sent." else "I couldn't find an enabled, clearly labelled Send button. I haven't sent anything.")
+                // SEND is handled by the one-time approval gate in execute(); never execute here.
+                say(context, "To send a message, ask me to send it and approve that exact message when I ask.")
             }
             "HOME" -> {
                 val accessibility = NovaAccessibilityService.instance
