@@ -20,6 +20,12 @@ object NovaCommand {
         val command = normalize(original)
         if (command.isBlank()) return
 
+        // Answer capability questions from the real app state, not an unconstrained model guess.
+        if (isCapabilityQuestion(command)) {
+            say(appContext, capabilityReply(appContext))
+            return
+        }
+
         if (AIProviderManager.hasGemini(appContext) || AIProviderManager.hasGroq(appContext)) {
             say(appContext, "Thinking…")
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
@@ -27,9 +33,11 @@ object NovaCommand {
                     "You are Nova, an Android assistant. Understand English, Tamil and Tanglish.",
                     "Infer the user's goal. Return exactly JSON: {\"action\":\"ACTION\",\"target\":\"\",\"reply\":\"\"}.",
                     "Allowed: FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, WEB_SEARCH, OPEN_APP, SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN, COPY_LAST_MESSAGE, PASTE, CONVERSATION, UNSUPPORTED.",
-                    "Use FOOD_SEARCH for hunger and nearby food. Use WEB_SEARCH for current research. Use OPEN_APP for apps.",
-                    "Never claim completion before the action runs. Payments, purchases, messages, deletion and security changes require confirmation.",
-                    "If details are missing, ask one short question using CONVERSATION."
+                    "Current supported actions only: open installed apps, open Android Settings, Home, Back, scroll, copy visible text and paste clipboard text when Nova Accessibility is enabled, Google web search, nearby food discovery via Maps, and opening Swiggy/Zomato search.",
+                    "Conversation and intent planning use configured Gemini/Groq keys, or the downloaded Qwen local model. Do not claim web pages are read, results compared, or tasks completed; searches are handed off to another app.",
+                    "Never claim unsupported abilities such as sending messages, making calls, reading notifications, controlling arbitrary apps, booking, ordering, buying, transferring money, making payments, deleting files, or changing security settings.",
+                    "Financial transactions and purchases are never allowed, even if the user confirms. Do not place food orders. For unsupported actions, use CONVERSATION and explain the limitation.",
+                    "Never claim completion before the Android action runs. If details are missing, ask one short question using CONVERSATION."
                 ).joinToString("\n")
                 val cloud = AIProviderManager.plan(appContext, prompt, original)
                 val selected = if (cloud.ok) parseAiIntent(cloud.message) else null
@@ -61,6 +69,36 @@ object NovaCommand {
 
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         executeIntent(appContext, understand(command, prefs.getString("last_app", null)))
+    }
+
+    private fun isCapabilityQuestion(text: String): Boolean = containsAny(
+        text,
+        "what can you do", "what all can you do", "what are your features", "your capabilities",
+        "what can nova do", "tell me your features", "how can you help me", "what do you support",
+        "நீ என்ன செய்ய முடியும்", "உன்னால என்ன செய்ய முடியும்", "என்னென்ன செய்ய முடியும்",
+        "நீ என்ன பண்ணுவ", "enna ellam panna mudiyum", "nee enna panna mudiyum",
+        "un features enna", "nova enna pannum"
+    )
+
+    private fun capabilityReply(context: Context): String {
+        val cloudReady = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
+        val localReady = LocalAiManager.isDownloaded(context)
+        val aiMode = when {
+            cloudReady && localReady -> "AI reasoning: Gemini/Groq with your downloaded Qwen model available as a local option."
+            cloudReady -> "AI reasoning: your configured Gemini/Groq connection."
+            localReady -> "AI reasoning: your downloaded Qwen model, which can work offline."
+            else -> "AI reasoning: not configured yet. Add a Gemini/Groq key or download the local Qwen model."
+        }
+        return """
+            I'm Nova. Here's what I can do right now:
+            • Understand requests in English, Tamil and Tanglish.
+            • Open installed apps and Android Settings; go Home or Back; scroll the screen.
+            • Search Google and open nearby food results in Maps, Swiggy or Zomato.
+            • Copy visible text and paste clipboard text when Nova Accessibility is enabled.
+            • Have AI-assisted conversations and plan supported actions. $aiMode
+
+            Important limits: I don't send messages, make phone calls, read chats or notifications, place food orders, book services, make purchases or payments, transfer money, delete files, or change security settings. Search handoffs open another app; I don't yet read and compare its live results automatically.
+            """.trimIndent()
     }
 
     private fun parseAiIntent(raw: String): BrainIntent? {
