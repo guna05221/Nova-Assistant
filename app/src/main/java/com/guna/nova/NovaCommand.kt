@@ -20,6 +20,14 @@ object NovaCommand {
         val command = normalize(original)
         if (command.isBlank()) return
 
+        // Handle explicit typing/sending locally before AI intent planning. This prevents
+        // a model from misclassifying "type what is Java" as a normal conversation.
+        val directIntent = understand(command, null)
+        if (directIntent.kind == "TYPE_TEXT" || directIntent.kind == "SEND") {
+            executeIntent(appContext, directIntent)
+            return
+        }
+
         // Answer capability questions from the real app state, not an unconstrained model guess.
         if (isCapabilityQuestion(command)) {
             say(appContext, capabilityReply(appContext))
