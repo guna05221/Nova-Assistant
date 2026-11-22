@@ -35,6 +35,7 @@ class WakeWordService : Service() {
         Log.i(TAG, message)
         getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
             .putString("status", message).putBoolean("running", running).apply()
+        NovaOverlayService.status(this, message)
         getSystemService(NotificationManager::class.java).notify(notificationId, notification(message))
     }
     private fun notification(message: String) = NotificationCompat.Builder(this, channel)
@@ -53,6 +54,7 @@ class WakeWordService : Service() {
         if (Build.VERSION.SDK_INT >= 29) startForeground(notificationId, note, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         else startForeground(notificationId, note)
         identity = VoiceIdentity(this)
+        NovaOverlayService.show(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -65,6 +67,7 @@ class WakeWordService : Service() {
             try { recorder?.stop() } catch (_: Exception) {}
             getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
                 .putBoolean("running", false).putString("status", "Listening stopped.").apply()
+            NovaOverlayService.hide(this)
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -128,7 +131,10 @@ class WakeWordService : Service() {
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
                 override fun onEndOfSpeech() {}
-                override fun onPartialResults(partialResults: Bundle?) {}
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    if (partial.isNotBlank()) NovaOverlayService.userPartial(this@WakeWordService, partial)
+                }
                 override fun onEvent(eventType: Int, params: Bundle?) {}
                 override fun onError(error: Int) {
                     recognitionActive = false
@@ -148,6 +154,7 @@ class WakeWordService : Service() {
                         } else {
                             lastHandledPhrase = normalized
                             lastHandledAt = now
+                            NovaOverlayService.userFinal(this@WakeWordService, phrase)
                             report("Heard: $phrase")
                             try { NovaCommand.execute(this@WakeWordService, phrase) }
                             catch (e: Exception) { Log.e(TAG, "Command failed", e); report("Command failed: ${e.message}") }
