@@ -33,14 +33,7 @@ object NovaSpeech {
                 synchronized(this) {
                     val tts = engine ?: return@synchronized
                     if (status == TextToSpeech.SUCCESS) {
-                        val languageStatus = tts.setLanguage(Locale.getDefault())
-                        ready = languageStatus != TextToSpeech.LANG_MISSING_DATA &&
-                            languageStatus != TextToSpeech.LANG_NOT_SUPPORTED
-                        if (!ready) {
-                            val fallbackStatus = tts.setLanguage(Locale.US)
-                            ready = fallbackStatus != TextToSpeech.LANG_MISSING_DATA &&
-                                fallbackStatus != TextToSpeech.LANG_NOT_SUPPORTED
-                        }
+                        ready = true
                         tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                             override fun onStart(utteranceId: String?) = Unit
 
@@ -87,8 +80,26 @@ object NovaSpeech {
         speakReady(current, text)
     }
 
+    private fun selectVoice(tts: TextToSpeech, text: String): Boolean {
+        val preferred = if (Regex("[\\u0B80-\\u0BFF]").containsMatchIn(text)) {
+            Locale("ta", "IN")
+        } else {
+            Locale("en", "IN")
+        }
+        fun available(status: Int) = status != TextToSpeech.LANG_MISSING_DATA &&
+            status != TextToSpeech.LANG_NOT_SUPPORTED
+        if (available(tts.setLanguage(preferred))) return true
+        if (available(tts.setLanguage(Locale.getDefault()))) return true
+        return available(tts.setLanguage(Locale.US))
+    }
+
     @Synchronized
     private fun speakReady(tts: TextToSpeech, text: String) {
+        if (!selectVoice(tts, text)) {
+            activeUtteranceId = null
+            WakeWordService.resumeAfterSpeech()
+            return
+        }
         val id = "nova-response-${utteranceSequence.incrementAndGet()}"
         activeUtteranceId = id
         val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
