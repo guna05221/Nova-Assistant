@@ -48,7 +48,8 @@ object NovaCommand {
             val reply = json.optString("reply").takeIf { it.isNotBlank() }
             when (action) {
                 "OPEN_APP", "SEARCH", "HOME", "BACK", "SETTINGS", "SCROLL_UP",
-                "SCROLL_DOWN", "COPY_LAST_MESSAGE", "PASTE" -> BrainIntent(action, target)
+                "SCROLL_DOWN", "COPY_LAST_MESSAGE", "PASTE",
+                "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO", "WEB_SEARCH" -> BrainIntent(action, target)
                 "CONVERSATION" -> BrainIntent("CONVERSATION", reply ?: "Tell me a little more about what you want me to do.")
                 "UNSUPPORTED", "SEND_MESSAGE", "PAYMENT", "DELETE" ->
                     BrainIntent("CONVERSATION", reply ?: "I can't perform that action yet.")
@@ -99,10 +100,23 @@ object NovaCommand {
                 if (app.isBlank() || !openApp(context, app)) say(context, "I couldn't find ${app.ifBlank { "that app" }} on this phone.")
                 else remember(context, "OPEN_APP", app)
             }
-            "SEARCH" -> {
+            "SEARCH", "WEB_SEARCH" -> {
                 val query = intent.value.orEmpty()
                 if (query.isBlank()) say(context, "What should I search for?")
-                else { search(context, query); remember(context, "SEARCH", query) }
+                else { search(context, query); remember(context, intent.kind, query) }
+            }
+            "FOOD_SEARCH" -> {
+                val preference = intent.value?.takeIf { it.isNotBlank() } ?: "restaurants and food"
+                val opened = FoodDiscovery.findNearby(context, preference)
+                say(context, if (opened) "Opening nearby food and restaurant results. You can also ask me to search Swiggy or Zomato." else "I couldn't open nearby food search.")
+                remember(context, "FOOD_SEARCH", preference)
+            }
+            "SEARCH_SWIGGY", "SEARCH_ZOMATO" -> {
+                val app = if (intent.kind == "SEARCH_SWIGGY") "Swiggy" else "Zomato"
+                val query = intent.value?.takeIf { it.isNotBlank() } ?: "food near me"
+                val opened = FoodDiscovery.searchDeliveryApp(context, app, query)
+                say(context, if (opened) "Opening $app food search." else "I couldn't open $app.")
+                remember(context, intent.kind, query)
             }
             "CONVERSATION" -> say(context, intent.value ?: "I'm listening. Tell me what you'd like me to do.")
             else -> say(context, "I couldn't understand that request. Please say it another way.")
@@ -113,6 +127,14 @@ object NovaCommand {
 
     private fun understand(text: String, lastApp: String?): BrainIntent {
         val t = text.lowercase(Locale.ROOT)
+        // Natural-language fallback for common goals when the local model returns invalid output.
+        if (containsAny(t, "i am hungry", "i'm hungry", "im hungry", "hungry", "find food", "food nearby",
+                "nearby restaurants", "restaurants near me", "want to eat", "something to eat",
+                "pasikkuthu", "pasikuthu", "saapidanum", "சாப்பிடணும்", "பசிக்குது", "உணவு தேடு"))
+            return BrainIntent("FOOD_SEARCH")
+        if (t.contains("swiggy")) return BrainIntent("SEARCH_SWIGGY", text)
+        if (t.contains("zomato")) return BrainIntent("SEARCH_ZOMATO", text)
+
         // Clipboard commands act on the currently visible app screen.
         if (containsAny(t, "copy the last message", "copy last message", "copy that message", "last message copy", "கடைசி மெசேஜ் காப்பி", "kadaisi message copy", "last message ah copy")) return BrainIntent("COPY_LAST_MESSAGE")
         if (containsAny(t, "paste it", "paste that", "paste the message", "paste", "இத ஒட்டு", "ஒட்டு", "paste pannu", "adha paste pannu", "paste pannunga")) return BrainIntent("PASTE")
