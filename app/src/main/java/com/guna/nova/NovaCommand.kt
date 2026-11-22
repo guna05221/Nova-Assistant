@@ -217,6 +217,10 @@ object NovaCommand {
         "SCROLL_UP", "SCROLL_DOWN", "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO"
     )
 
+    fun notifyApprovalUnavailable(context: Context) {
+        say(context, "I couldn't display the Allow or Deny prompt. Please enable Nova notifications and try again. Nothing was sent.")
+    }
+
     fun resolvePendingSend(context: Context, allow: Boolean) {
         val approved = synchronized(pendingSendLock) {
             val current = pendingSend
