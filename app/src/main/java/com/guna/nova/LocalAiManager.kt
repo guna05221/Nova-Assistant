@@ -167,16 +167,7 @@ object LocalAiManager {
             val remaining = connection.contentLengthLong.coerceAtLeast(0L)
             val total = if (append && remaining > 0) existing + remaining else remaining
             connection.inputStream.use { input ->
-                part.outputStream().let { raw ->
-                    raw.use { out ->
-                        if (append) {
-                            // Range requests must append to the existing partial file.
-                            // Re-open in append mode below instead of truncating.
-                        }
-                    }
-                }
-                val mode = if (append) "wa" else "rw"
-                java.io.RandomAccessFile(part, mode).use { raf ->
+                java.io.RandomAccessFile(part, "rw").use { raf ->
                     if (append) raf.seek(existing) else raf.setLength(0L)
                     val buffer = ByteArray(1024 * 1024)
                     var count = existing
