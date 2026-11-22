@@ -81,7 +81,14 @@ object AIProviderManager {
                 "x-goog-api-key", key, body.toString()
             )
             if (response.first in 200..299) Result(true, "Gemini connected successfully.", "Gemini")
-            else Result(false, "Gemini returned HTTP ${response.first}. Check the key, model access or quota.")
+            else {
+                val detail = try {
+                    val error = JSONObject(response.second).optJSONObject("error")
+                    error?.optString("message").orEmpty()
+                } catch (_: Exception) { "" }
+                val safeDetail = detail.replace(Regex("AIza[0-9A-Za-z_-]{20,}"), "[redacted]").take(240)
+                Result(false, "Gemini HTTP ${response.first}: ${safeDetail.ifBlank { "Google did not provide details. Check model access and API key restrictions." }}")
+            }
         } catch (e: Exception) { Result(false, "Gemini test failed: ${e.message ?: "network error"}") }
     }
 
