@@ -37,3 +37,12 @@ Accessibility is powerful. Nova does not silently send messages, make purchases,
 - Open Nova and choose **Download & activate local AI**. The first download needs Wi-Fi and several GB of free storage; subsequent inference runs offline.
 - On an 8 GB phone, close other heavy apps before loading. Actual speed and memory use must be validated on the physical device.
 - Once loaded, spoken commands are sent to the local model for structured intent planning. Only the explicitly allow-listed phone actions are executed. Message sending and other sensitive actions remain unsupported in this build.
+
+
+## Hybrid agent milestone (November 2026)
+- The local Qwen model now receives an intent-planning prompt that explicitly handles natural-language goals, including hunger/food discovery, rather than only exact command phrases.
+- Added first agent tool: location-aware nearby restaurant search through Android Maps intents.
+- Added Swiggy and Zomato HTTPS search handoffs, plus general web-search routing.
+- Added Android coarse/fine location permission requests. The phone user must grant location access for location-aware results.
+- Safety boundary: Nova can open searches and apps, but cannot place food orders, send messages, or pay without a separate explicit confirmation flow.
+- Current milestone is an initial agent-tool integration, not a complete autonomous multi-step agent. Search results are shown by the destination app/site; Nova does not yet scrape or compare live restaurant listings itself. Generic online research, robust tool chaining, verified execution, conversational memory, and expanded app integrations remain subsequent milestones.
