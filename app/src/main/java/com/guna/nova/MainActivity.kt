@@ -2,6 +2,7 @@ package com.guna.nova
 
 import android.Manifest
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -232,6 +233,25 @@ class MainActivity : ComponentActivity() {
                                         if (running) "Stop listening" else "Start listening",
                                         fontWeight = FontWeight.Bold
                                     )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        if (!Settings.canDrawOverlays(this@MainActivity)) {
+                                            startActivity(
+                                                Intent(
+                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                                    Uri.parse("package:$packageName")
+                                                )
+                                            )
+                                        } else {
+                                            startService(Intent(this@MainActivity, NovaOverlayService::class.java).apply {
+                                                action = NovaOverlayService.ACTION_SHOW
+                                            })
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Enable floating conversation popup", color = NovaMint)
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
