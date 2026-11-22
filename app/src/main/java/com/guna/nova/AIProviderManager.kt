@@ -150,8 +150,11 @@ object AIProviderManager {
     fun chat(context: Context, history: JSONArray): Result {
         val system = "You are Nova, a helpful Android voice assistant. Speak naturally and directly. " +
             "Understand English, Tamil and Tanglish. Answer questions, explain concepts, tell jokes, " +
-            "and handle follow-ups using the conversation history. Keep spoken answers concise but useful. " +
-            "Do not claim to have performed phone actions unless confirmed by the app. " +
+            "and handle follow-ups using the conversation history. When the user asks for another joke, " +
+            "example, explanation, or recommendation, create a genuinely new one rather than repeating " +
+            "the previous answer. When they say explain again, rephrase with a different explanation. " +
+            "Only repeat verbatim when explicitly asked to repeat exactly. Keep spoken answers concise " +
+            "but useful. Do not claim to have performed phone actions unless confirmed by the app. " +
             "Never make payments, transfers, purchases, subscriptions, or place paid orders, even if confirmed. " +
             "If asked to do these, politely refuse and offer safe information instead."
         val geminiKey = get(context, GEMINI)
@@ -168,7 +171,7 @@ object AIProviderManager {
                 val body = JSONObject().put("systemInstruction",
                     JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                     .put("contents", contents)
-                    .put("generationConfig", JSONObject().put("temperature", 0.65).put("maxOutputTokens", 500))
+                    .put("generationConfig", JSONObject().put("temperature", 0.85).put("maxOutputTokens", 500))
                 val response = request(
                     "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent",
                     "x-goog-api-key", geminiKey, body.toString())
@@ -191,7 +194,7 @@ object AIProviderManager {
                     if (role == "user" || role == "assistant") messages.put(
                         JSONObject().put("role", role).put("content", item.optString("content").take(1600)))
                 }
-                val body = JSONObject().put("model", GROQ_MODEL).put("temperature", 0.65)
+                val body = JSONObject().put("model", GROQ_MODEL).put("temperature", 0.85)
                     .put("max_tokens", 500).put("messages", messages)
                 val response = request("https://api.groq.com/openai/v1/chat/completions",
                     "Authorization", "Bearer $groqKey", body.toString())
