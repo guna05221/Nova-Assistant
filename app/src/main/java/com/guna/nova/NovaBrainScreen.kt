@@ -45,6 +45,7 @@ fun NovaBrainScreen(
     var liveConnected by remember { mutableStateOf(chatGptConnected) }
     var liveStatus by remember { mutableStateOf(connectionStatus) }
     var liveEmail by remember { mutableStateOf(ChatGptAccountStore.email(context)) }
+    var showBillingSafetyDialog by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
             liveConnected = ChatGptAccountStore.isConnected(context)
@@ -103,11 +104,31 @@ fun NovaBrainScreen(
             primary = true
         )
         Button(
-            onClick = if (liveConnected) onDisconnectChatGpt else onConnectChatGpt,
+            onClick = { if (liveConnected) onDisconnectChatGpt() else showBillingSafetyDialog = true },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
         ) {
             Text(if (liveConnected) "Disconnect ChatGPT" else "Connect ChatGPT")
+        }
+        if (!liveConnected) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF382B20)),
+                shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("PAYMENT SAFETY CHECK", color = Color(0xFFFFC078),
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Text("Before connecting, check ChatGPT Settings → Usage. Keep Automatic reload OFF and do not allow partner apps to use purchased credits. Nova cannot read these billing toggles from sign-in, so it cannot verify their current state.",
+                        color = Color.White, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        if (showBillingSafetyDialog) {
+            AlertDialog(
+                onDismissRequest = { showBillingSafetyDialog = false },
+                title = { Text("Check automatic purchases first") },
+                text = { Text("Nova cannot inspect your ChatGPT billing settings. Before continuing, open ChatGPT Settings → Usage and make sure Automatic reload is OFF. Also keep permission for partner apps to use purchased credits OFF. If either setting is enabled, cancel here and turn it off yourself first. Nova will never enable either setting.") },
+                confirmButton = { TextButton(onClick = { showBillingSafetyDialog = false; onConnectChatGpt() }) { Text("I checked — continue") } },
+                dismissButton = { TextButton(onClick = { showBillingSafetyDialog = false }) { Text("Cancel") } }
+            )
         }
         Text(
             if (liveConnected && liveEmail.isNotBlank()) "$liveEmail · ChatGPT plan permission verified" else liveStatus,
