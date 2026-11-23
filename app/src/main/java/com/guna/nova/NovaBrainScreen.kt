@@ -100,42 +100,30 @@ fun NovaBrainScreen(
         BrainProviderCard(
             title = "ChatGPT",
             subtitle = "Primary brain · OpenAI",
-            status = if (liveConnected) "Connected" else "Not connected",
+            status = "Website workspace",
             primary = true
         )
         Button(
-            onClick = { if (liveConnected) onDisconnectChatGpt() else showBillingSafetyDialog = true },
+            onClick = onConnectChatGpt,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
         ) {
-            Text(if (liveConnected) "Disconnect ChatGPT" else "Connect ChatGPT")
+            Text("Open ChatGPT workspace")
         }
-        if (!liveConnected) {
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF382B20)),
-                shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("PAYMENT SAFETY CHECK", color = Color(0xFFFFC078),
-                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                    Text("Before connecting, check ChatGPT Settings → Usage. Keep Automatic reload OFF and do not allow partner apps to use purchased credits. Nova cannot read these billing toggles from sign-in, so it cannot verify their current state.",
-                        color = Color.White, style = MaterialTheme.typography.bodySmall)
-                }
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF252A32)),
+            shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("MANUAL CHATGPT ACCESS", color = BrainPurple,
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                Text("Nova opens the official ChatGPT website in its own workspace. Sign in there with your account. Website sign-in is separate from Nova's background AI provider and does not let Nova read website messages or use hidden APIs.",
+                    color = Color.White, style = MaterialTheme.typography.bodySmall)
+                Text("No automatic credit purchases, recharges or reloads are performed by Nova.",
+                    color = BrainMuted, style = MaterialTheme.typography.bodySmall)
             }
         }
-        if (showBillingSafetyDialog) {
-            AlertDialog(
-                onDismissRequest = { showBillingSafetyDialog = false },
-                title = { Text("Check automatic purchases first") },
-                text = { Text("Nova cannot inspect your ChatGPT billing settings. Before continuing, open ChatGPT Settings → Usage and make sure Automatic reload is OFF. Also keep permission for partner apps to use purchased credits OFF. If either setting is enabled, cancel here and turn it off yourself first. Nova will never enable either setting.") },
-                confirmButton = { TextButton(onClick = { showBillingSafetyDialog = false; onConnectChatGpt() }) { Text("I checked — continue") } },
-                dismissButton = { TextButton(onClick = { showBillingSafetyDialog = false }) { Text("Cancel") } }
-            )
-        }
-        Text(
-            if (liveConnected && liveEmail.isNotBlank()) "$liveEmail · ChatGPT plan permission verified" else liveStatus,
-            color = BrainMuted,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Text("ChatGPT website session is separate from Nova's AI provider connection.",
+            color = BrainMuted, style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth())
 
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("BACKUP INTELLIGENCE", color = BrainMuted,
