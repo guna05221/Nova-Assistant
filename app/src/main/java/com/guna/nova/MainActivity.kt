@@ -252,16 +252,29 @@ class MainActivity : ComponentActivity() {
                                 }
                                 if (selectedTab == 0) {
                                     IconButton(onClick = {
-                                        if (!Settings.canDrawOverlays(this@MainActivity)) {
-                                            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-                                        } else {
-                                            NovaOverlayService.chatScreenVisible = false
-                                            startService(Intent(this@MainActivity, NovaOverlayService::class.java).apply {
-                                                action = NovaOverlayService.ACTION_SHOW
+                                        if (running) {
+                                            startService(Intent(this@MainActivity, WakeWordService::class.java).apply {
+                                                action = WakeWordService.ACTION_STOP
                                             })
+                                        } else if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                            permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                                        } else {
+                                            try {
+                                                NovaOverlayService.chatScreenVisible = false
+                                                ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, WakeWordService::class.java))
+                                            } catch (e: Exception) {
+                                                getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
+                                                    .putBoolean("running", false)
+                                                    .putString("status", "Could not start voice listening: ${e.message}")
+                                                    .apply()
+                                            }
                                         }
                                     }) {
-                                        Icon(Icons.Default.GraphicEq, contentDescription = "Open floating conversation", tint = NovaMint)
+                                        Icon(
+                                            if (running) Icons.Default.Mic else Icons.Default.GraphicEq,
+                                            contentDescription = if (running) "Stop voice listening" else "Start voice listening",
+                                            tint = NovaMint
+                                        )
                                     }
                                     IconButton(onClick = { chatMessages.clear(); chatInput = "" }) {
                                         Icon(Icons.Default.Add, contentDescription = "New chat", tint = Color.White)
