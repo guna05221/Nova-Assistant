@@ -105,6 +105,8 @@ object AIProviderManager {
 
     /** Gemini primary, Groq fallback. Returns null if neither provider is configured/available. */
     fun plan(context: Context, systemPrompt: String, userText: String): Result {
+        val chatGpt = ChatGptAccountManager.plan(context, systemPrompt, userText)
+        if (chatGpt != null && chatGpt.ok) return chatGpt
         val geminiKey = get(context, GEMINI)
         if (geminiKey.isNotBlank()) {
             try {
