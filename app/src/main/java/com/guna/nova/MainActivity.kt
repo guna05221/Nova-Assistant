@@ -83,8 +83,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             var running by remember { mutableStateOf(false) }
             var status by remember { mutableStateOf("Ready when you are") }
-            var researchReport by remember { mutableStateOf(NovaResearchStore.latest(this@MainActivity)) }
-            val localAi by LocalAiManager.state.collectAsState()
             var chatInput by remember { mutableStateOf("") }
             var selectedTab by remember { mutableIntStateOf(0) }
             val chatMessages = remember { mutableStateListOf<NovaChatLine>() }
@@ -128,12 +126,10 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(Unit) {
-                LocalAiManager.loadIfPresent(this@MainActivity)
                 while (true) {
                     val prefs = getSharedPreferences("nova_diagnostics", MODE_PRIVATE)
                     status = prefs.getString("status", "Ready when you are") ?: "Ready when you are"
                     running = prefs.getBoolean("running", false)
-                    researchReport = NovaResearchStore.latest(this@MainActivity)
                     val assistantAt = prefs.getLong("last_assistant_at", 0L)
                     if (assistantAt > lastAssistantAt) {
                         val assistantText = prefs.getString("last_assistant_message", "").orEmpty()
@@ -172,7 +168,7 @@ class MainActivity : ComponentActivity() {
                                 Spacer(Modifier.width(12.dp))
                                 Column {
                                     Text("Nova", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                                    Text("Your AI assistant", color = NovaMuted, style = MaterialTheme.typography.labelSmall)
+                                    Text("Phone controls", color = NovaMuted, style = MaterialTheme.typography.labelSmall)
                                 }
                             }
                             NavigationDrawerItem(
@@ -197,24 +193,6 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(horizontal = 10.dp)
                             )
                             NavigationDrawerItem(
-                                label = { Text("ChatGPT") }, selected = selectedTab == 6,
-                                icon = { Text("✳", color = NovaPurple) },
-                                onClick = { selectedTab = 6; scope.launch { drawerState.close() } },
-                                modifier = Modifier.padding(horizontal = 10.dp)
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Brain") }, selected = selectedTab == 4,
-                                icon = { Text("✳", color = NovaPurple) },
-                                onClick = { selectedTab = 4; scope.launch { drawerState.close() } },
-                                modifier = Modifier.padding(horizontal = 10.dp)
-                            )
-                            NavigationDrawerItem(
-                                label = { Text("Research") }, selected = selectedTab == 1,
-                                icon = { Icon(Icons.Default.Search, null) },
-                                onClick = { selectedTab = 1; scope.launch { drawerState.close() } },
-                                modifier = Modifier.padding(horizontal = 10.dp)
-                            )
-                            NavigationDrawerItem(
                                 label = { Text("Memory & plans") }, selected = selectedTab == 2,
                                 icon = { Icon(Icons.Default.EventNote, null) },
                                 onClick = { selectedTab = 2; scope.launch { drawerState.close() } },
@@ -233,7 +211,7 @@ class MainActivity : ComponentActivity() {
                                 onClick = { selectedTab = 5; scope.launch { drawerState.close() } },
                                 modifier = Modifier.padding(horizontal = 10.dp)
                             )
-                            Text("Nova · Hybrid AI", color = NovaMuted, style = MaterialTheme.typography.labelSmall,
+                            Text("Nova · Phone utilities", color = NovaMuted, style = MaterialTheme.typography.labelSmall,
                                 modifier = Modifier.padding(start = 24.dp, top = 8.dp, bottom = 22.dp))
                         }
                     }
@@ -253,13 +231,10 @@ class MainActivity : ComponentActivity() {
                                     Text("Nova", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                                     Text(
                                         when (selectedTab) {
-                                            1 -> "Research library"
                                             2 -> "Memory & plans"
                                             3 -> "Recent activity"
-                                            4 -> "Nova Brain · Intelligence engine"
                                             5 -> "Preferences and controls"
-                                            6 -> "ChatGPT website workspace"
-                                            else -> "Hybrid AI assistant"
+                                            else -> "Phone controls"
                                         },
                                         color = NovaMuted, style = MaterialTheme.typography.labelSmall
                                     )
@@ -318,25 +293,6 @@ class MainActivity : ComponentActivity() {
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )
-                                6 -> ChatGptVirtualScreen(modifier = Modifier.fillMaxSize())
-                                4 -> NovaBrainScreen(
-                                    chatGptConnected = ChatGptAccountStore.isConnected(this@MainActivity),
-                                    geminiConnected = AIProviderManager.hasGemini(this@MainActivity),
-                                    groqConnected = AIProviderManager.hasGroq(this@MainActivity),
-                                    localReady = LocalAiManager.isDownloaded(this@MainActivity),
-                                    connectionStatus = ChatGptAccountStore.status(this@MainActivity),
-                                    onConnectChatGpt = { selectedTab = 6 },
-                                    onDisconnectChatGpt = { selectedTab = 6 },
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                                1 -> Column(
-                                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
-                                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                                ) {
-                                    ResearchLibraryScreen(researchReport) { url ->
-                                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-                                    }
-                                }
                                 2 -> Column(
                                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
                                     verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -358,32 +314,7 @@ class MainActivity : ComponentActivity() {
                                     verticalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
                                     Text("Settings", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                                    Text("Manage Nova's AI providers, offline model and device permissions.", color = NovaMuted)
-                                    Text("AI PROVIDERS", color = NovaMint, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                                    AIProviderSettingsCard()
-                                    Text("ON-DEVICE AI", color = NovaMint, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                                    Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
-                                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                                            Text("Qwen3.5 4B · Q4_K_M", color = Color.White, fontWeight = FontWeight.SemiBold)
-                                            Text("Run supported conversations privately on this phone after downloading the model.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
-                                            Text(localAi.status, color = NovaMint, style = MaterialTheme.typography.bodySmall)
-                                            if (localAi.downloading || localAi.progress > 0f) {
-                                                LinearProgressIndicator(progress = localAi.progress, modifier = Modifier.fillMaxWidth(), color = NovaMint)
-                                            }
-                                            Button(
-                                                onClick = { LocalAiManager.downloadAndLoad(this@MainActivity) },
-                                                enabled = !localAi.downloading && !localAi.ready,
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text(when {
-                                                    localAi.ready -> "Local AI ready"
-                                                    localAi.downloading -> "Downloading / loading…"
-                                                    LocalAiManager.isDownloaded(this@MainActivity) -> "Load local AI"
-                                                    else -> "Download & activate local AI"
-                                                })
-                                            }
-                                        }
-                                    }
+                                    Text("Manage Nova's phone permissions and controls.", color = NovaMuted)
                                     Text("VOICE ASSISTANT", color = NovaMint, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                                     Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp)) {
                                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
