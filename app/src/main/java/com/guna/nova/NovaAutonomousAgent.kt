@@ -150,8 +150,6 @@ object NovaAutonomousAgent {
                         onComplete("The action was attempted, but I couldn't verify the result. I stopped here.")
                         return@launch
                     }
-                    lastFingerprint = after.toString().hashCode().toString()
-                    repeatedStateCount = 0
                     lastAction = "${plan.action} completed; fresh screen observation captured"
                 }
                 if (generation.get() == runId) onComplete("I reached the $MAX_STEPS-step safety limit. $lastAction.")
