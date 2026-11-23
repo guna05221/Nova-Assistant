@@ -45,7 +45,7 @@ object NovaAutonomousAgent {
                 onStatus(message)
             }
             fun finish(message: String, completed: Boolean = false) {
-                NovaWorkspaceStore.setInstructireportStatus(
+                NovaWorkspaceStore.setInstructionStatus(
                     app, instruction.id,
                     if (completed) NovaWorkspaceStore.InstructionStatus.COMPLETED
                     else NovaWorkspaceStore.InstructionStatus.BLOCKED,
