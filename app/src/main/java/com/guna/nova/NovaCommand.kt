@@ -84,7 +84,7 @@ object NovaCommand {
                         say(appContext, "I've finished the online research and saved the report with clickable source links in Nova. Open Nova to review the recommendations.")
                     }
                 } else {
-                    withContext(Dispatchers.Main) { say(appContext, result.error) }
+                    withContext(Dispatchers.Main) { say(appContext, friendlyResponse(result.error)) }
                 }
             }
             return
@@ -576,21 +576,38 @@ object NovaCommand {
             .putString("last_action", action).putString("last_app", value).apply()
     }
 
+    private fun friendlyResponse(raw: String): String {
+        val value = raw.lowercase(Locale.ROOT)
+        return when {
+            value.contains("http 429") || value.contains("too many requests") ->
+                "The online research service is receiving too many requests right now. Please try again in a little while. You can continue chatting with me."
+            value.contains("http 503") || value.contains("http 502") || value.contains("http 504") ->
+                "The online research service is temporarily unavailable. Please try again shortly."
+            Regex("http\\s+\\d{3}").containsMatchIn(value) ->
+                "I couldn't complete the online research just now. Please try again in a moment."
+            value.contains("network") || value.contains("timeout") ->
+                "I couldn't connect to the online research service. Check your internet connection and try again."
+            else -> raw
+        }
+    }
+
     private fun statusOnly(context: Context, message: String) {
+        val safeMessage = friendlyResponse(message)
         context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
-            .putString("status", message).putBoolean("running", true).apply()
-        NovaOverlayService.status(context, message)
+            .putString("status", safeMessage).putBoolean("running", true).apply()
+        NovaOverlayService.status(context, safeMessage)
     }
 
     private fun say(context: Context, message: String) {
+        val safeMessage = friendlyResponse(message)
         context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
-            .putString("status", message)
-            .putString("last_assistant_message", message)
+            .putString("status", safeMessage)
+            .putString("last_assistant_message", safeMessage)
             .putLong("last_assistant_at", System.currentTimeMillis())
             .putBoolean("running", true)
             .apply()
-        NovaOverlayService.assistant(context, message)
-        NovaSpeech.speak(context, message)
+        NovaOverlayService.assistant(context, safeMessage)
+        NovaSpeech.speak(context, safeMessage)
         // The main chat screen observes the saved response and renders it as a chat bubble.
     }
 
