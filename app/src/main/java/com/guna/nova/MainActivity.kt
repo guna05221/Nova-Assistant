@@ -25,6 +25,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.EventNote
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,6 +38,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private val NovaBackground = Color(0xFF0B1020)
 private val NovaPanel = Color(0xFF171F35)
@@ -63,6 +69,7 @@ class MainActivity : ComponentActivity() {
             var researchReport by remember { mutableStateOf(NovaResearchStore.latest(this@MainActivity)) }
             val localAi by LocalAiManager.state.collectAsState()
             var chatInput by remember { mutableStateOf("") }
+            var selectedTab by remember { mutableIntStateOf(0) }
             val chatMessages = remember { mutableStateListOf<NovaChatLine>() }
             var lastAssistantAt by remember { mutableLongStateOf(0L) }
             val voiceInput = rememberLauncherForActivityResult(
@@ -172,6 +179,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            if (selectedTab == 0) {
                             Text("How can I help?", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                             Text("Ask naturally. Nova can chat, research and help with tasks.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
 
@@ -268,6 +276,19 @@ class MainActivity : ComponentActivity() {
                                 Icon(Icons.Default.Settings, null); Spacer(Modifier.width(8.dp)); Text("Nova app settings")
                             }
                             Spacer(Modifier.height(8.dp))
+                            } else if (selectedTab == 1) {
+                                ResearchLibraryScreen(researchReport) { url ->
+                                    runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                                }
+                            } else if (selectedTab == 2) {
+                                MemoryLibraryScreen(
+                                    NovaWorkspaceStore.getReminders(this@MainActivity),
+                                    NovaWorkspaceStore.getInstructions(this@MainActivity),
+                                    NovaWorkspaceStore.getPaymentNotices(this@MainActivity)
+                                )
+                            } else {
+                                ActivityLibraryScreen(NovaWorkspaceStore.getInstructions(this@MainActivity), status)
+                            }
                         }
 
                         // The composer is pinned to the bottom; only the conversation history scrolls inside it.
@@ -278,6 +299,12 @@ class MainActivity : ComponentActivity() {
                             onSend = { sendChatMessage() },
                             onVoice = { startVoiceChat() }
                         )
+                        NavigationBar(containerColor = Color(0xFF111A30), contentColor = Color.White) {
+                            NavigationBarItem(selected = selectedTab == 0, onClick = { selectedTab = 0 }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") })
+                            NavigationBarItem(selected = selectedTab == 1, onClick = { selectedTab = 1 }, icon = { Icon(Icons.Default.Search, null) }, label = { Text("Research") })
+                            NavigationBarItem(selected = selectedTab == 2, onClick = { selectedTab = 2 }, icon = { Icon(Icons.Default.EventNote, null) }, label = { Text("Memory") })
+                            NavigationBarItem(selected = selectedTab == 3, onClick = { selectedTab = 3 }, icon = { Icon(Icons.Default.History, null) }, label = { Text("Activity") })
+                        }
                     }
                 }
             }
@@ -327,5 +354,134 @@ private fun friendlyStatus(raw: String): String {
         value.contains("stopped") -> "Listening is off."
         value.contains("failed") -> raw
         else -> "Tap Start listening and speak your command directly."
+    }
+}
+
+@Composable
+private fun ResearchLibraryScreen(report: NovaResearchStore.Report?, onOpen: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Research", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("Recommendations and evidence Nova has gathered.", color = NovaMuted)
+        if (report == null) EmptyLibraryCard("No research reports yet", "Ask Nova to research a product, course, restaurant or anything you want to compare.")
+        else Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(22.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("LATEST REPORT", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(report.query, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Saved " + SimpleDateFormat("dd MMM yyyy · hh:mm a", Locale.getDefault()).format(Date(report.savedAt)), color = NovaMuted, style = MaterialTheme.typography.labelSmall)
+                HorizontalDivider(color = Color(0xFF34415E))
+                Text(report.text, color = Color(0xFFE7EAF3), style = MaterialTheme.typography.bodyMedium)
+                if (report.sources.isNotEmpty()) {
+                    Text("SOURCES", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    report.sources.forEach { source ->
+                        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF222D49)), shape = RoundedCornerShape(14.dp)) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(source.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 3)
+                                TextButton(onClick = { onOpen(source.url) }) { Text("Open", color = NovaMint) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoryLibraryScreen(
+    reminders: List<NovaWorkspaceStore.Reminder>,
+    instructions: List<NovaWorkspaceStore.Instruction>,
+    payments: List<NovaWorkspaceStore.PaymentNotice>
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Memory & plans", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text("Important events, reminders and commitments saved by Nova.", color = NovaMuted)
+        Text("SAVED EVENTS", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        if (reminders.isEmpty()) EmptyLibraryCard("No saved events yet", "Confirmed dates, destinations and reminders will appear here when saved.")
+        reminders.forEach { event ->
+            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("SAVED EVENT", color = NovaMint, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text(event.title, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    MemoryDetailRow("Date", SimpleDateFormat("dd MMMM yyyy · hh:mm a", Locale.getDefault()).format(Date(event.eventAt)))
+                    if (event.location.isNotBlank()) MemoryDetailRow("Destination", event.location)
+                    MemoryDetailRow("Source", event.source)
+                    MemoryDetailRow("Status", event.status.name.lowercase().replaceFirstChar { it.uppercase() })
+                    if (event.details.isNotBlank()) Text(event.details, color = NovaMuted, style = MaterialTheme.typography.bodyMedium)
+                    HorizontalDivider(color = Color(0xFF34415E))
+                    Text("REMINDER", color = NovaMint, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Event saved. Reminder delivery depends on the reminder scheduler being enabled.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        Text("ONGOING PLANS", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        val active = instructions.filter { it.status != NovaWorkspaceStore.InstructionStatus.COMPLETED }
+        if (active.isEmpty()) EmptyLibraryCard("No active plans", "Tasks Nova is working on will appear here.")
+        active.take(8).forEach { item ->
+            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(item.status.name, color = NovaMint, style = MaterialTheme.typography.labelSmall)
+                    if (item.progress.isNotEmpty()) Text(item.progress.last(), color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        Text("BILLS & SUBSCRIPTIONS", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        if (payments.isEmpty()) EmptyLibraryCard("Nothing tracked yet", "Saved bill and subscription notices will appear here.")
+        payments.take(6).forEach { notice ->
+            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(notice.title, color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(notice.provider + " · " + notice.status.name, color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+                    if (notice.dueAt != null) Text("Due " + SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(notice.dueAt)), color = NovaMint, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActivityLibraryScreen(instructions: List<NovaWorkspaceStore.Instruction>, status: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Activity", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp)) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text("CURRENT STATUS", color = NovaMint, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text(status, color = Color.White)
+            }
+        }
+        val ordered = instructions.sortedByDescending { it.updatedAt }
+        if (ordered.isEmpty()) EmptyLibraryCard("No activity recorded yet", "Task progress and results will appear here.")
+        ordered.forEach { item ->
+            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text(item.status.name, color = NovaMint, style = MaterialTheme.typography.labelSmall)
+                    }
+                    Text(item.originalRequest, color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+                    item.progress.takeLast(4).forEach { Text("• " + it, color = Color(0xFFE0E5F2), style = MaterialTheme.typography.bodySmall) }
+                    if (item.result.isNotBlank()) Text(item.result, color = NovaMint, style = MaterialTheme.typography.bodySmall)
+                    Text(SimpleDateFormat("dd MMM yyyy · hh:mm a", Locale.getDefault()).format(Date(item.updatedAt)), color = NovaMuted, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyLibraryCard(title: String, detail: String) {
+    Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun MemoryDetailRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+        Text(label, color = NovaMuted, modifier = Modifier.weight(0.8f))
+        Text(value, color = Color.White, modifier = Modifier.weight(1.2f), fontWeight = FontWeight.SemiBold)
     }
 }
