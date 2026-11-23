@@ -176,9 +176,16 @@ object NovaCommand {
 
     private fun isResearchRequest(command: String): Boolean {
         val value = command.lowercase(Locale.ROOT)
-        val intentWords = listOf("find me", "recommend", "research", "compare", "best ", "good ", "search online", "look up")
-        val topicWords = listOf("tutorial", "course", "video", "java", "laptop", "phone", "hotel", "flight", "trip", "restaurant", "product")
-        return intentWords.any { value.contains(it) } && topicWords.any { value.contains(it) }
+        val explicitResearch = listOf(
+            "find me", "find the best", "recommend", "research", "compare", "best ",
+            "good ", "search online", "look up", "where can i", "which one", "suggest"
+        )
+        val foodIntent = listOf("i want to eat", "i'm hungry", "im hungry", "hungry", "find food", "nearby restaurant", "restaurants near", "what should i eat")
+        val generalGoal = listOf("i need", "i want", "looking for", "help me choose", "show me options")
+        val hasTopic = value.split(Regex("\\s+")).any { it.length > 2 }
+        return explicitResearch.any { value.contains(it) } ||
+            foodIntent.any { value.contains(it) } ||
+            (generalGoal.any { value.contains(it) } && hasTopic)
     }
 
     private suspend fun processUnknownUtterance(context: Context, utterance: String, requestId: Long) {
