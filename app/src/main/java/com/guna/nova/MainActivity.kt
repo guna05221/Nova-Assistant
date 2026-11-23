@@ -71,6 +71,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Remove credentials and downloaded AI model data left by earlier Nova builds.
+        getSharedPreferences("nova_ai_secure", MODE_PRIVATE).edit().clear().apply()
+        getSharedPreferences("nova_chatgpt", MODE_PRIVATE).edit().clear().apply()
+        getSharedPreferences("nova_brain", MODE_PRIVATE).edit().clear().apply()
+        java.io.File(filesDir, "models").deleteRecursively()
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         val asks = mutableListOf(
             Manifest.permission.RECORD_AUDIO,
