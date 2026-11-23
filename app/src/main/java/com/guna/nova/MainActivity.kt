@@ -255,6 +255,7 @@ class MainActivity : ComponentActivity() {
                                         if (!Settings.canDrawOverlays(this@MainActivity)) {
                                             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
                                         } else {
+                                            NovaOverlayService.chatScreenVisible = false
                                             startService(Intent(this@MainActivity, NovaOverlayService::class.java).apply {
                                                 action = NovaOverlayService.ACTION_SHOW
                                             })
