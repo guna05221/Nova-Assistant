@@ -36,7 +36,24 @@ object NovaAutonomousAgent {
     ) {
         val runId = generation.incrementAndGet()
         val app = context.applicationContext
+        val instruction = NovaWorkspaceStore.createInstruction(
+            app, title = request.trim().take(80), originalRequest = request
+        )
         scope.launch {
+            fun reportStatus(message: String) {
+                NovaWorkspaceStore.addProgress(app, instruction.id, message)
+                onStatus(message)
+            }
+            fun finish(message: String, completed: Boolean = false) {
+                NovaWorkspaceStore.setInstructireportStatus(
+                    app, instruction.id,
+                    if (completed) NovaWorkspaceStore.InstructionStatus.COMPLETED
+                    else NovaWorkspaceStore.InstructionStatus.BLOCKED,
+                    result = message,
+                    verified = completed
+                )
+                onComplete(message)
+            }
             val deadline = android.os.SystemClock.elapsedRealtime() + DEADLINE_MS
             var lastFingerprint = ""
             var repeatedStateCount = 0
@@ -47,12 +64,12 @@ object NovaAutonomousAgent {
                 for (step in 1..MAX_STEPS) {
                     if (generation.get() != runId) return@launch
                     if (android.os.SystemClock.elapsedRealtime() >= deadline) {
-                        onComplete("I stopped because the task reached its time limit. $lastAction.")
+                        finish("I stopped because the task reached its time limit. $lastAction.")
                         return@launch
                     }
                     val screen = observeScreenWithRetry(runId)
                     if (screen == null) {
-                        onComplete("I can't observe the current app. Enable Nova Accessibility and try again. Nothing else was done.")
+                        finish("I can't observe the current app. Enable Nova Accessibility and try again. Nothing else was done.")
                         return@launch
                     }
                     val packageName = screen.optString("package")
@@ -60,11 +77,11 @@ object NovaAutonomousAgent {
                     if (fingerprint == lastFingerprint) repeatedStateCount++ else repeatedStateCount = 0
                     lastFingerprint = fingerprint
                     if (repeatedStateCount >= 2) {
-                        onComplete("I stopped because the screen wasn't changing after my last action. $lastAction.")
+                        finish("I stopped because the screen wasn't changing after my last action. $lastAction.")
                         return@launch
                     }
 
-                    onStatus("Planning step $step of $MAX_STEPS")
+                    reportStatus("Planning step $step of $MAX_STEPS")
                     val plannerInput = buildString {
                         append("User's original goal: ").append(request.take(700)).append("\n")
                         append("Current foreground package: ").append(packageName).append("\n")
@@ -95,7 +112,7 @@ object NovaAutonomousAgent {
                     val plan = parse(raw)
                     if (generation.get() != runId) return@launch
                     if (plan == null) {
-                        onComplete("I couldn't create a safe next step. $lastAction.")
+                        finish("I couldn't create a safe next step. $lastAction.")
                         return@launch
                     }
                     if (plan.action == "DONE") {
@@ -106,13 +123,13 @@ object NovaAutonomousAgent {
                             if (!appTarget.isNullOrBlank() && openInstalledApp(app, appTarget)) {
                                 actionsExecuted++
                                 lastAction = "Opened $appTarget; waiting for the app to finish loading"
-                                onStatus(lastAction)
+                                reportStatus(lastAction)
                                 waitForAppReady(app, appTarget, runId, onStatus)
                                 lastAction = "$appTarget loaded; continuing with the requested next step"
-                                onStatus(lastAction)
+                                reportStatus(lastAction)
                                 continue
                             }
-                            onComplete("I haven't started the task yet, so I won't report it as complete. I couldn't safely identify an app to open. Nothing was changed.")
+                            finish("I haven't started the task yet, so I won't report it as complete. I couldn't safely identify an app to open. Nothing was changed.")
                             return@launch
                         }
 
@@ -123,13 +140,13 @@ object NovaAutonomousAgent {
                             prematureDoneCount++
                             if (prematureDoneCount < 2) {
                                 lastAction = "The requested search for \"$searchQuery\" is not visible yet; continue with the next step"
-                                onStatus(lastAction)
+                                reportStatus(lastAction)
                                 continue
                             }
-                            onComplete("I opened the requested app, but I couldn't verify that the search for \"$searchQuery\" was completed. I stopped without claiming success.")
+                            finish("I opened the requested app, but I couldn't verify that the search for \"$searchQuery\" was completed. I stopped without claiming success.")
                             return@launch
                         }
-                        onComplete(plan.reply.ifBlank { "The requested task appears complete." })
+                        finish(plan.reply.ifBlank { "The requested task appears complete." }, completed = true)
                         return@launch
                     }
                     val target = plan.target.trim()
@@ -167,26 +184,26 @@ object NovaAutonomousAgent {
                         else -> false
                     }
                     if (!result) {
-                        onComplete("I couldn't safely complete the next step, so I stopped without guessing. $lastAction.")
+                        finish("I couldn't safely complete the next step, so I stopped without guessing. $lastAction.")
                         return@launch
                     }
                     actionsExecuted++
                     lastAction = plan.reply.ifBlank { "${plan.action} requested" }
-                    onStatus("Checking: $lastAction")
+                    reportStatus("Checking: $lastAction")
                     if (plan.action == "OPEN_APP" && !extractSearchQuery(request).isNullOrBlank()) {
                         waitForAppReady(app, target, runId, onStatus)
                     }
                     val after = observeScreenWithRetry(runId)
                     if (after == null) {
-                        onComplete("The action was attempted, but Android did not expose a readable screen after several checks. I stopped without claiming success.")
+                        finish("The action was attempted, but Android did not expose a readable screen after several checks. I stopped without claiming success.")
                         return@launch
                     }
                     lastAction = "${plan.action} completed; fresh screen observation captured"
-                    onStatus("Screen verified; continuing")
+                    reportStatus("Screen verified; continuing")
                 }
-                if (generation.get() == runId) onComplete("I reached the $MAX_STEPS-step safety limit. $lastAction.")
+                if (generation.get() == runId) finish("I reached the $MAX_STEPS-step safety limit. $lastAction.")
             } catch (_: Exception) {
-                if (generation.get() == runId) onComplete("The task encountered an error and stopped safely. $lastAction.")
+                if (generation.get() == runId) finish("The task encountered an error and stopped safely. $lastAction.")
             }
         }
     }
@@ -227,7 +244,7 @@ object NovaAutonomousAgent {
             }
             val now = android.os.SystemClock.elapsedRealtime()
             if (now - lastAnnouncement >= 15_000L) {
-                onStatus("Waiting for $appLabel to finish loading before searching")
+                reportStatus("Waiting for $appLabel to finish loading before searching")
                 lastAnnouncement = now
             }
             delay(1_500L)
