@@ -153,10 +153,19 @@ object AIProviderManager {
         val key = get(context, GEMINI)
         if (key.isBlank()) return ResearchResult(false, "", emptyList(), "Connect Gemini to enable grounded online research.")
         return try {
-            val prompt = "Research this request thoroughly: " + query.take(900) +
-                "\\nReturn a concise comparison report. Distinguish verified facts from missing information. " +
-                "For video recommendations include exact title, creator, duration and direct video URL when available. " +
-                "Never invent ratings, prices, review counts or URLs. Prefer primary sources."
+            val prompt = "Act as an independent research analyst. Understand the user's actual goal and choose relevant sources and evaluation criteria yourself. Request: " + query.take(900) +
+                "\\nResearch broadly using Google Search. Compare several relevant options, not just the first result. " +
+                "Evaluate official descriptions/specifications, independent reviews, user comments where indexed, " +
+                "creator/provider credibility, quality, recency, suitability and value. For videos include exact title, " +
+                "creator, duration, language, syllabus/content and learner feedback when evidence is available. " +
+                "For restaurants include cuisine, specific dishes and menu prices; for nearby requests use only a " +
+                "location explicitly supplied by the user, otherwise ask for their area. For products, travel and " +
+                "services choose criteria appropriate to that category. Explain the best overall option and alternatives " +
+                "with pros and cons. Separate verified facts, review evidence and your own inference. State when " +
+                "comments, ratings, prices or other evidence could not be verified. Never fabricate ratings, review " +
+                "counts, prices, distances, availability, comments or URLs. Prefer direct/official and current " +
+                "independent sources. Format as a readable report with an executive recommendation, comparison, " +
+                "why the top option wins, trade-offs and source titles. Do not claim review evidence unless found.";
             val body = JSONObject()
                 .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
                 .put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
