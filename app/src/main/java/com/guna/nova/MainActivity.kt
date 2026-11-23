@@ -6,8 +6,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.speech.RecognizerIntent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -60,6 +62,43 @@ class MainActivity : ComponentActivity() {
             var status by remember { mutableStateOf("Ready when you are") }
             var researchReport by remember { mutableStateOf(NovaResearchStore.latest(this@MainActivity)) }
             val localAi by LocalAiManager.state.collectAsState()
+            var chatInput by remember { mutableStateOf("") }
+            val chatMessages = remember { mutableStateListOf<NovaChatLine>() }
+            var lastAssistantAt by remember { mutableLongStateOf(0L) }
+            val voiceInput = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult()
+            ) { result ->
+                if (result.resultCode == RESULT_OK) {
+                    val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
+                    if (spoken.isNotBlank()) {
+                        chatMessages.add(NovaChatLine("YOU", spoken))
+                        NovaCommand.execute(this@MainActivity, spoken)
+                    }
+                }
+            }
+
+            fun sendChatMessage() {
+                val message = chatInput.trim()
+                if (message.isNotBlank()) {
+                    chatMessages.add(NovaChatLine("YOU", message))
+                    chatInput = ""
+                    NovaCommand.execute(this@MainActivity, message)
+                }
+            }
+
+            fun startVoiceChat() {
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Talk to Nova")
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                }
+                try { voiceInput.launch(intent) } catch (_: Exception) {
+                    getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
+                        .putString("status", "Voice input is unavailable on this device.").apply()
+                }
+            }
 
             LaunchedEffect(Unit) {
                 LocalAiManager.loadIfPresent(this@MainActivity)
@@ -68,7 +107,13 @@ class MainActivity : ComponentActivity() {
                     status = prefs.getString("status", "Ready when you are") ?: "Ready when you are"
                     running = prefs.getBoolean("running", false)
                     researchReport = NovaResearchStore.latest(this@MainActivity)
-                    delay(1000)
+                    val assistantAt = prefs.getLong("last_assistant_at", 0L)
+                    if (assistantAt > lastAssistantAt) {
+                        val assistantText = prefs.getString("last_assistant_message", "").orEmpty()
+                        if (assistantText.isNotBlank()) chatMessages.add(NovaChatLine("NOVA", assistantText))
+                        lastAssistantAt = assistantAt
+                    }
+                    delay(700)
                 }
             }
 
@@ -305,6 +350,13 @@ class MainActivity : ComponentActivity() {
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
+                        NovaChatPanel(
+                            messages = chatMessages,
+                            input = chatInput,
+                            onInputChange = { chatInput = it },
+                            onSend = { sendChatMessage() },
+                            onVoice = { startVoiceChat() }
+                        )
                         Text(
                             "WHAT CAN NOVA DO?",
                             color = NovaMuted,
