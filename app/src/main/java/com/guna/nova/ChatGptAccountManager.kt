@@ -266,7 +266,16 @@ object ChatGptAccountManager {
         val decoder = Base64.getUrlDecoder()
         val header = JSONObject(decoder.decode(parts[0]).toString(Charsets.UTF_8))
         require(header.optString("alg") == "RS256") { "Unsupported OpenAI identity signature." }
-        val jwksConnection = URL("$CHATGPT_ISSUER/.well-known/jwks.json").openConnection() as HttpURLConnection
+        val discoveryConnection = URL("$CHATGPT_ISSUER/.well-known/openid-configuration").openConnection() as HttpURLConnection
+        discoveryConnection.connectTimeout = 15_000
+        discoveryConnection.readTimeout = 15_000
+        val discovery = JSONObject(discoveryConnection.inputStream.bufferedReader().use { it.readText() })
+        require(discovery.optString("issuer") == CHATGPT_ISSUER) { "Unexpected OpenAI identity issuer metadata." }
+        val jwksUri = discovery.optString("jwks_uri")
+        require(Uri.parse(jwksUri).scheme == "https" && Uri.parse(jwksUri).host == "auth.openai.com") {
+            "Unexpected OpenAI signing-key endpoint."
+        }
+        val jwksConnection = URL(jwksUri).openConnection() as HttpURLConnection
         jwksConnection.connectTimeout = 15_000
         jwksConnection.readTimeout = 15_000
         val jwks = JSONObject(jwksConnection.inputStream.bufferedReader().use { it.readText() })
