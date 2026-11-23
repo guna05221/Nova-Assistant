@@ -41,6 +41,8 @@ object NovaAutonomousAgent {
             var lastFingerprint = ""
             var repeatedStateCount = 0
             var lastAction = "No action taken"
+            var actionsExecuted = 0
+            var prematureDoneCount = 0
             try {
                 for (step in 1..MAX_STEPS) {
                     if (generation.get() != runId) return@launch
@@ -98,7 +100,35 @@ object NovaAutonomousAgent {
                         return@launch
                     }
                     if (plan.action == "DONE") {
-                        onComplete(plan.reply.ifBlank { "I stopped the task safely. $lastAction." })
+                        // A planner may incorrectly declare completion before taking any action.
+                        // For explicit "open X then ..." goals, recover deterministically by opening X.
+                        if (actionsExecuted == 0) {
+                            val appTarget = extractOpenTarget(request)
+                            if (!appTarget.isNullOrBlank() && openInstalledApp(app, appTarget)) {
+                                actionsExecuted++
+                                lastAction = "Opened $appTarget; checking the next step"
+                                onStatus(lastAction)
+                                delay(900L)
+                                continue
+                            }
+                            onComplete("I haven't started the task yet, so I won't report it as complete. I couldn't safely identify an app to open. Nothing was changed.")
+                            return@launch
+                        }
+
+                        // Opening an app alone does not satisfy a request that also asks to search.
+                        val searchQuery = extractSearchQuery(request)
+                        if (!searchQuery.isNullOrBlank() &&
+                            !screen.toString().contains(searchQuery, ignoreCase = true)) {
+                            prematureDoneCount++
+                            if (prematureDoneCount < 2) {
+                                lastAction = "The requested search for \"$searchQuery\" is not visible yet; continue with the next step"
+                                onStatus(lastAction)
+                                continue
+                            }
+                            onComplete("I opened the requested app, but I couldn't verify that the search for \"$searchQuery\" was completed. I stopped without claiming success.")
+                            return@launch
+                        }
+                        onComplete(plan.reply.ifBlank { "The requested task appears complete." })
                         return@launch
                     }
                     val target = plan.target.trim()
@@ -139,6 +169,7 @@ object NovaAutonomousAgent {
                         onComplete("I couldn't safely complete the next step, so I stopped without guessing. $lastAction.")
                         return@launch
                     }
+                    actionsExecuted++
                     lastAction = plan.reply.ifBlank { "${plan.action} requested" }
                     onStatus("Checking: $lastAction")
                     delay(850L)
@@ -160,6 +191,22 @@ object NovaAutonomousAgent {
     }
 
     private data class Plan(val action: String, val target: String, val text: String, val reply: String)
+
+    private fun extractOpenTarget(request: String): String? {
+        val match = Regex(
+            """\\b(?:open|launch)\\s+([A-Za-z0-9][A-Za-z0-9 ._-]*?)(?=\\s+(?:then|and then|after that)|[,;.!?]|$)""",
+            RegexOption.IGNORE_CASE
+        ).find(request) ?: return null
+        return match.groupValues[1].trim().trimEnd('.', ',', ';', '!', '?').takeIf { it.isNotBlank() }
+    }
+
+    private fun extractSearchQuery(request: String): String? {
+        val match = Regex(
+            """\\b(?:search|look\\s+for|find)\\s+(?:for\\s+)?(.+?)(?=\\s+(?:and then|then|after that)|[,;.!?]|$)""",
+            RegexOption.IGNORE_CASE
+        ).find(request) ?: return null
+        return match.groupValues[1].trim().trimEnd('.', ',', ';', '!', '?').takeIf { it.isNotBlank() }
+    }
 
     private fun parse(raw: String): Plan? {
         return try {
