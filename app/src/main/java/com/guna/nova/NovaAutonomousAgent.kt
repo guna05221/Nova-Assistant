@@ -22,7 +22,7 @@ object NovaAutonomousAgent {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val generation = AtomicLong(0L)
     private const val MAX_STEPS = 6
-    private const val DEADLINE_MS = 35_000L
+    private const val DEADLINE_MS = 180_000L
 
     fun cancel() {
         generation.incrementAndGet()
@@ -105,9 +105,11 @@ object NovaAutonomousAgent {
                             val appTarget = extractOpenTarget(request)
                             if (!appTarget.isNullOrBlank() && openInstalledApp(app, appTarget)) {
                                 actionsExecuted++
-                                lastAction = "Opened $appTarget; checking the next step"
+                                lastAction = "Opened $appTarget; waiting for the app to finish loading"
                                 onStatus(lastAction)
-                                delay(900L)
+                                waitForAppReady(app, appTarget, runId, onStatus)
+                                lastAction = "$appTarget loaded; continuing with the requested next step"
+                                onStatus(lastAction)
                                 continue
                             }
                             onComplete("I haven't started the task yet, so I won't report it as complete. I couldn't safely identify an app to open. Nothing was changed.")
@@ -171,6 +173,9 @@ object NovaAutonomousAgent {
                     actionsExecuted++
                     lastAction = plan.reply.ifBlank { "${plan.action} requested" }
                     onStatus("Checking: $lastAction")
+                    if (plan.action == "OPEN_APP" && !extractSearchQuery(request).isNullOrBlank()) {
+                        waitForAppReady(app, target, runId, onStatus)
+                    }
                     val after = observeScreenWithRetry(runId)
                     if (after == null) {
                         onComplete("The action was attempted, but Android did not expose a readable screen after several checks. I stopped without claiming success.")
@@ -183,6 +188,49 @@ object NovaAutonomousAgent {
             } catch (_: Exception) {
                 if (generation.get() == runId) onComplete("The task encountered an error and stopped safely. $lastAction.")
             }
+        }
+    }
+
+    /**
+     * After launching an app, allow a longer bounded warm-up window. Prefer continuing
+     * as soon as its foreground screen exposes a Search control; never wait indefinitely.
+     */
+    private suspend fun waitForAppReady(
+        context: Context,
+        appLabel: String,
+        runId: Long,
+        onStatus: (String) -> Unit
+    ) {
+        val expectedPackage = findInstalledApp(context, appLabel)?.packageName ?: return
+        val endAt = android.os.SystemClock.elapsedRealtime() + 120_000L
+        var lastAnnouncement = 0L
+        while (generation.get() == runId &&
+            android.os.SystemClock.elapsedRealtime() < endAt) {
+            val snapshot = withContext(Dispatchers.Main) {
+                NovaAccessibilityService.instance?.observeActiveScreen(80)
+            }
+            if (snapshot?.optString("package") == expectedPackage) {
+                val nodes = snapshot.optJSONArray("nodes")
+                var hasSearchControl = false
+                if (nodes != null) {
+                    for (i in 0 until nodes.length()) {
+                        val node = nodes.optJSONObject(i) ?: continue
+                        val label = (node.optString("text") + " " + node.optString("description"))
+                            .lowercase(Locale.ROOT)
+                        if (label.contains("search")) {
+                            hasSearchControl = true
+                            break
+                        }
+                    }
+                }
+                if (hasSearchControl) return
+            }
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now - lastAnnouncement >= 15_000L) {
+                onStatus("Waiting for $appLabel to finish loading before searching")
+                lastAnnouncement = now
+            }
+            delay(1_500L)
         }
     }
 
@@ -253,15 +301,19 @@ object NovaAutonomousAgent {
         return matches == 1
     }
 
-    private fun openInstalledApp(context: Context, label: String): Boolean {
+    private fun findInstalledApp(context: Context, label: String): android.content.pm.ApplicationInfo? {
         val query = label.lowercase(Locale.ROOT).trim()
-        if (query.isBlank()) return false
+        if (query.isBlank()) return null
         val apps = context.packageManager.getInstalledApplications(0)
-        val match = apps.firstOrNull {
+        return apps.firstOrNull {
             context.packageManager.getApplicationLabel(it).toString().lowercase(Locale.ROOT) == query
         } ?: apps.firstOrNull {
             context.packageManager.getApplicationLabel(it).toString().lowercase(Locale.ROOT).contains(query)
-        } ?: return false
+        }
+    }
+
+    private fun openInstalledApp(context: Context, label: String): Boolean {
+        val match = findInstalledApp(context, label) ?: return false
         val intent = context.packageManager.getLaunchIntentForPackage(match.packageName) ?: return false
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
