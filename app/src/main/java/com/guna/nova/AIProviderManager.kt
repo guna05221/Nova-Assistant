@@ -217,6 +217,8 @@ object AIProviderManager {
             "but useful. Do not claim to have performed phone actions unless confirmed by the app. " +
             "Never make payments, transfers, purchases, subscriptions, or place paid orders, even if confirmed. " +
             "If asked to do these, politely refuse and offer safe information instead."
+        val chatGpt = ChatGptAccountManager.chat(context, history)
+        if (chatGpt != null && chatGpt.ok) return chatGpt
         val geminiKey = get(context, GEMINI)
         if (geminiKey.isNotBlank()) {
             try {
