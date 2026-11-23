@@ -142,6 +142,57 @@ object AIProviderManager {
     }
 
 
+    data class ResearchSource(val title: String, val url: String)
+    data class ResearchResult(val ok: Boolean, val report: String, val sources: List<ResearchSource>, val error: String = "")
+
+    /**
+     * Grounded online research using Gemini Google Search. Source URLs are taken only
+     * from grounding metadata returned by the provider; Nova does not invent links.
+     */
+    fun research(context: Context, query: String): ResearchResult {
+        val key = get(context, GEMINI)
+        if (key.isBlank()) return ResearchResult(false, "", emptyList(), "Connect Gemini to enable grounded online research.")
+        return try {
+            val prompt = "Research this request thoroughly: " + query.take(900) +
+                "\\nReturn a concise comparison report. Distinguish verified facts from missing information. " +
+                "For video recommendations include exact title, creator, duration and direct video URL when available. " +
+                "Never invent ratings, prices, review counts or URLs. Prefer primary sources."
+            val body = JSONObject()
+                .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                .put("tools", JSONArray().put(JSONObject().put("google_search", JSONObject())))
+                .put("generationConfig", JSONObject().put("temperature", 0.2).put("maxOutputTokens", 1800))
+            val response = request(
+                "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent",
+                "x-goog-api-key", key, body.toString()
+            )
+            if (response.first !in 200..299) return ResearchResult(false, "", emptyList(), "Online research failed (HTTP ${response.first}).")
+            val root = JSONObject(response.second)
+            val candidate = root.optJSONArray("candidates")?.optJSONObject(0)
+                ?: return ResearchResult(false, "", emptyList(), "The research provider returned no result.")
+            val parts = candidate.optJSONObject("content")?.optJSONArray("parts")
+            val report = buildString {
+                if (parts != null) for (i in 0 until parts.length()) {
+                    val part = parts.optJSONObject(i) ?: continue
+                    append(part.optString("text"))
+                }
+            }.trim()
+            val sources = mutableListOf<ResearchSource>()
+            val chunks = candidate.optJSONObject("groundingMetadata")?.optJSONArray("groundingChunks")
+            if (chunks != null) for (i in 0 until chunks.length()) {
+                val web = chunks.optJSONObject(i)?.optJSONObject("web") ?: continue
+                val url = web.optString("uri")
+                val title = web.optString("title").ifBlank { url }
+                if (url.startsWith("https://") && sources.none { it.url == url }) {
+                    sources.add(ResearchSource(title.take(160), url))
+                }
+            }
+            if (report.isBlank()) ResearchResult(false, "", sources, "The research provider returned an empty report.")
+            else ResearchResult(true, report, sources.take(12))
+        } catch (e: Exception) {
+            ResearchResult(false, "", emptyList(), "Online research error: ${e.message ?: "network unavailable"}")
+        }
+    }
+
     /**
      * Natural conversation endpoint. Unlike plan(), this returns plain language and
      * sends the bounded conversation history so follow-up questions retain context.
