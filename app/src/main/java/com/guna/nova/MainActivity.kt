@@ -312,10 +312,20 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.fillMaxSize()
                                 )
                                 4 -> NovaBrainScreen(
-                                    chatGptConnected = false,
+                                    chatGptConnected = ChatGptAccountStore.isConnected(this@MainActivity),
                                     geminiConnected = AIProviderManager.hasGemini(this@MainActivity),
                                     groqConnected = AIProviderManager.hasGroq(this@MainActivity),
                                     localReady = LocalAiManager.isDownloaded(this@MainActivity),
+                                    connectionStatus = ChatGptAccountStore.status(this@MainActivity),
+                                    onConnectChatGpt = {
+                                        ChatGptAccountManager.startSignIn(this@MainActivity) { message ->
+                                            getSharedPreferences("nova_chatgpt", MODE_PRIVATE).edit()
+                                                .putString("status", message).apply()
+                                        }
+                                    },
+                                    onDisconnectChatGpt = {
+                                        ChatGptAccountManager.disconnect(this@MainActivity)
+                                    },
                                     modifier = Modifier.fillMaxSize()
                                 )
                                 1 -> Column(
