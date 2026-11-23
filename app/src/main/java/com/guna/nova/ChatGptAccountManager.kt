@@ -33,7 +33,7 @@ private const val CHATGPT_PREFS = "nova_chatgpt"
 private const val CHATGPT_RESOURCE = "https://api.openai.com/v1"
 private const val CHATGPT_ISSUER = "https://auth.openai.com"
 private const val CHATGPT_REDIRECT = "http://127.0.0.1:1455/auth/callback"
-private const val CHATGPT_MODEL = "gpt-6.2-sol"
+private const val CHATGPT_MODEL_FALLBACK = "gpt-6.1-sol"
 
 object ChatGptAccountStore {
     fun isConnected(context: Context): Boolean =
@@ -118,10 +118,11 @@ object ChatGptAccountManager {
         val record = ChatGptAccountStore.credentials(context) ?: return null
         return try {
             val input = org.json.JSONArray()
-                .put(org.json.JSONObject().put("role", "system").put("content",
-                    systemPrompt + "\nNever propose financial actions: payments, transfers, purchases, subscriptions, recharges or paid orders are permanently blocked."))
-                .put(org.json.JSONObject().put("role", "user").put("content", userText.take(1200) + "\nReturn one JSON action."))
-            val body = org.json.JSONObject().put("model", CHATGPT_MODEL).put("input", input)
+                .put(org.json.JSONObject().put("role", "user")
+                    .put("content", userText.take(1200) + "\nReturn one JSON action."))
+            val instructions = systemPrompt + "\nNever propose financial actions: payments, transfers, purchases, subscriptions, recharges or paid orders are permanently blocked."
+            val body = org.json.JSONObject().put("model", listModels(record.getString("access_token")).firstOrNull()
+                ?: CHATGPT_MODEL_FALLBACK).put("instructions", instructions).put("input", input)
                 .put("store", false).put("stream", true)
             val answer = requestText(record.getString("access_token"), body)
             AIProviderManager.Result(true, answer, "ChatGPT")
@@ -191,8 +192,6 @@ object ChatGptAccountManager {
             }
 
             val input = org.json.JSONArray()
-            input.put(org.json.JSONObject().put("role", "system").put("content",
-                "You are Nova, a natural, helpful Android assistant. Use the supplied conversation history for follow-ups. Be clear and conversational. Do not claim phone actions happened unless Nova verifies them. Never perform or authorize payments, transfers, purchases, subscriptions, recharges or paid orders. Nova's separate safety layer controls all device actions."))
             for (i in 0 until history.length()) {
                 val item = history.optJSONObject(i) ?: continue
                 val role = item.optString("role")
@@ -201,7 +200,9 @@ object ChatGptAccountManager {
                         .put("content", item.optString("content").take(1600)))
                 }
             }
-            val body = org.json.JSONObject().put("model", CHATGPT_MODEL)
+            val body = org.json.JSONObject()
+                .put("model", listModels(record.getString("access_token")).firstOrNull() ?: CHATGPT_MODEL_FALLBACK)
+                .put("instructions", "You are Nova, a natural, helpful Android assistant. Use the supplied conversation history for follow-ups. Be clear and conversational. Do not claim phone actions happened unless Nova verifies them. Never perform or authorize payments, transfers, purchases, subscriptions, recharges or paid orders. Nova's separate safety layer controls all device actions.")
                 .put("input", input).put("store", false).put("stream", true)
             val connection = URL("$CHATGPT_RESOURCE/responses").openConnection() as HttpURLConnection
             connection.requestMethod = "POST"
@@ -351,9 +352,13 @@ object ChatGptAccountManager {
     }
 
     private fun postResponse(accessToken: String): Boolean {
+        val model = listModels(accessToken).firstOrNull()
+            ?: error("OpenAI did not return any models available to this ChatGPT account.")
         val body = JSONObject().apply {
-            put("model", CHATGPT_MODEL)
-            put("input", "Reply with exactly: Nova connection verified.")
+            put("model", model)
+            put("instructions", "Reply with exactly: Nova connection verified.")
+            put("input", JSONArray().put(JSONObject().put("role", "user")
+                .put("content", "Verify the Nova connection.")))
             put("store", false)
             put("stream", true)
         }
@@ -387,6 +392,31 @@ object ChatGptAccountManager {
         }
         connection.disconnect()
         return completed
+    }
+
+    /** Read the current account-specific model catalog; never guess a model slug. */
+    private fun listModels(accessToken: String): List<String> {
+        val connection = URL("$CHATGPT_RESOURCE/models").openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 25_000
+        connection.setRequestProperty("Authorization", "Bearer $accessToken")
+        val code = connection.responseCode
+        val text = (if (code in 200..299) connection.inputStream else connection.errorStream)
+            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+        connection.disconnect()
+        if (code !in 200..299) error("Could not load models for this ChatGPT account (HTTP $code): ${text.take(120)}")
+        val root = JSONObject(text)
+        val models = root.optJSONArray("models") ?: error("OpenAI returned no account model catalog.")
+        val available = mutableListOf<String>()
+        for (i in 0 until models.length()) {
+            val item = models.optJSONObject(i) ?: continue
+            if (item.optString("visibility") == "list") {
+                val slug = item.optString("slug")
+                if (slug.isNotBlank()) available.add(slug)
+            }
+        }
+        return available
     }
 
     private fun verifyIdToken(jwt: String, clientId: String, nonce: String): Pair<String, String> {
