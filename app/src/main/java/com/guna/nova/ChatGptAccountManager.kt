@@ -113,6 +113,60 @@ object ChatGptAccountManager {
         }
     }
 
+    /** Primary reasoning provider for Nova's bounded action planner. */
+    fun plan(context: Context, systemPrompt: String, userText: String): AIProviderManager.Result? {
+        val record = ChatGptAccountStore.credentials(context) ?: return null
+        return try {
+            val input = org.json.JSONArray()
+                .put(org.json.JSONObject().put("role", "system").put("content",
+                    systemPrompt + "\nNever propose financial actions: payments, transfers, purchases, subscriptions, recharges or paid orders are permanently blocked."))
+                .put(org.json.JSONObject().put("role", "user").put("content", userText.take(1200) + "\nReturn one JSON action."))
+            val body = org.json.JSONObject().put("model", CHATGPT_MODEL).put("input", input)
+                .put("store", false).put("stream", true)
+            val answer = requestText(record.getString("access_token"), body)
+            AIProviderManager.Result(true, answer, "ChatGPT")
+        } catch (e: Exception) {
+            AIProviderManager.Result(false, e.message ?: "ChatGPT planning request failed.", "ChatGPT")
+        }
+    }
+
+    private fun requestText(accessToken: String, body: org.json.JSONObject): String {
+        val connection = URL("$CHATGPT_RESOURCE/responses").openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.connectTimeout = 20_000
+        connection.readTimeout = 90_000
+        connection.doOutput = true
+        connection.setRequestProperty("Authorization", "Bearer $accessToken")
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+        val code = connection.responseCode
+        if (code !in 200..299) {
+            val detail = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            connection.disconnect()
+            error("ChatGPT request failed (HTTP $code): ${detail.take(140)}")
+        }
+        val answer = StringBuilder()
+        var completed = false
+        connection.inputStream.bufferedReader().useLines { lines ->
+            lines.forEach { line ->
+                if (!line.startsWith("data: ")) return@forEach
+                val data = line.removePrefix("data: ").trim()
+                if (data == "[DONE]") return@forEach
+                try {
+                    val event = org.json.JSONObject(data)
+                    when (event.optString("type")) {
+                        "response.output_text.delta" -> answer.append(event.optString("delta"))
+                        "response.completed" -> completed = true
+                        "response.failed" -> error("ChatGPT response failed.")
+                    }
+                } catch (_: org.json.JSONException) { }
+            }
+        }
+        connection.disconnect()
+        require(completed && answer.isNotBlank()) { "ChatGPT stream ended before a completed response." }
+        return answer.toString().trim()
+    }
+
     /** Primary Nova conversation provider. Returns null when no verified ChatGPT plan is connected. */
     fun chat(context: Context, history: org.json.JSONArray): AIProviderManager.Result? {
         var record = ChatGptAccountStore.credentials(context) ?: return null
