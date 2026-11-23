@@ -76,11 +76,10 @@ class WakeWordService : Service() {
         getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
             .putBoolean("running", true).putString("status", "Starting microphone…").apply()
         if (intent?.action == ACTION_ENROLL) Thread({ enrollVoice() }, "NovaEnrollment").start()
-        else if (identity?.isEnrolled() != true) {
-            report("Set up your voice profile first. Speaker verification is separate from speech recognition.", false)
-            active = false
-            stopSelf()
-        } else startSpeechRecognition()
+        else {
+            // Speaker-profile enrollment is optional and must not block ordinary speech recognition.
+            startSpeechRecognition()
+        }
         return START_NOT_STICKY
     }
 
