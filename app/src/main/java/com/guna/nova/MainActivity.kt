@@ -320,6 +320,7 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Text("Settings", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                                     Text("Manage Nova's phone permissions and controls.", color = NovaMuted)
+                                    GroqSettingsCard()
                                     Text("VOICE ASSISTANT", color = NovaMint, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                                     Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp)) {
                                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
