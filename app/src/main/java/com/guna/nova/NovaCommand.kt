@@ -71,6 +71,25 @@ object NovaCommand {
             return
         }
 
+        if (isResearchRequest(command)) {
+            statusOnly(appContext, "Researching online…")
+            scope.launch {
+                val result = AIProviderManager.research(appContext, original)
+                if (result.ok) {
+                    NovaResearchStore.save(
+                        appContext, original, result.report,
+                        result.sources.map { NovaResearchStore.Source(it.title, it.url) }
+                    )
+                    withContext(Dispatchers.Main) {
+                        say(appContext, "I've finished the online research and saved the report with clickable source links in Nova. Open Nova to review the recommendations.")
+                    }
+                } else {
+                    withContext(Dispatchers.Main) { say(appContext, result.error) }
+                }
+            }
+            return
+        }
+
         if (isMultiStepRequest(command)) {
             say(appContext, "I'll work through this one step at a time and verify each screen change. You can say cancel task to stop.")
             NovaAutonomousAgent.start(
@@ -153,6 +172,13 @@ object NovaCommand {
         scope.launch {
             processUnknownUtterance(appContext, original, requestId)
         }
+    }
+
+    private fun isResearchRequest(command: String): Boolean {
+        val value = command.lowercase(Locale.ROOT)
+        val intentWords = listOf("find me", "recommend", "research", "compare", "best ", "good ", "search online", "look up")
+        val topicWords = listOf("tutorial", "course", "video", "java", "laptop", "phone", "hotel", "flight", "trip", "restaurant", "product")
+        return intentWords.any { value.contains(it) } && topicWords.any { value.contains(it) }
     }
 
     private suspend fun processUnknownUtterance(context: Context, utterance: String, requestId: Long) {
