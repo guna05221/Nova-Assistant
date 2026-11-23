@@ -322,18 +322,26 @@ class MainActivity : ComponentActivity() {
                             description = "Try: “Search online for Java developer jobs”."
                         )
                         researchReport?.let { report ->
-                            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel.copy(alpha = 0.98f)), shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Text("LATEST RESEARCH REPORT", color = NovaMint, fontWeight = FontWeight.Bold)
-                                    Text(report.query, color = Color.White, fontWeight = FontWeight.SemiBold)
-                                    Text(report.text, color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+                            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel.copy(alpha = 0.98f)), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text("NOVA RESEARCH REPORT", color = NovaMint, fontWeight = FontWeight.Bold)
+                                    Text(report.query, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                                    Text(report.text, color = Color(0xFFE0E5F2), style = MaterialTheme.typography.bodyMedium)
                                     if (report.sources.isNotEmpty()) {
-                                        Text("SOURCES · TAP TO OPEN", color = NovaMint, fontWeight = FontWeight.Bold)
-                                        report.sources.forEach { source ->
-                                            OutlinedButton(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) } }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-                                                Text(source.title, maxLines = 2)
+                                        Text("RESEARCH SOURCES", color = NovaMint, fontWeight = FontWeight.Bold)
+                                        report.sources.forEachIndexed { index, source ->
+                                            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF222D49)), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                                                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    Text(source.title, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                                    Text("Source " + (index + 1) + " · Open original page", color = NovaMuted, style = MaterialTheme.typography.labelSmall)
+                                                    Button(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) } }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = NovaMint, contentColor = Color(0xFF101A2A))) {
+                                                        Text("Open source")
+                                                    }
+                                                }
                                             }
                                         }
+                                    } else {
+                                        Text("No direct source links were returned. Treat unlinked claims as unverified.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
                                     }
                                 }
                             }
