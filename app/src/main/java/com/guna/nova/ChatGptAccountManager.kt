@@ -113,6 +113,81 @@ object ChatGptAccountManager {
         }
     }
 
+    /** Primary Nova conversation provider. Returns null when no verified ChatGPT plan is connected. */
+    fun chat(context: Context, history: org.json.JSONArray): AIProviderManager.Result? {
+        var record = ChatGptAccountStore.credentials(context) ?: return null
+        return try {
+            if (record.optLong("expires_at") <= System.currentTimeMillis() + 60_000L) {
+                val refreshed = postForm("$CHATGPT_ISSUER/api/accounts/oauth/token", mapOf(
+                    "grant_type" to "refresh_token",
+                    "client_id" to record.getString("client_id"),
+                    "refresh_token" to record.getString("refresh_token"),
+                    "resource" to CHATGPT_RESOURCE
+                ))
+                val scopes = refreshed.optString("scope", record.optString("scope")).split(" ").filter { it.isNotBlank() }.toSet()
+                require("chatgpt.tokens.use.direct" in scopes && "resource.invoke" in scopes) {
+                    "ChatGPT plan permission is no longer available. Reconnect your account."
+                }
+                record.put("access_token", refreshed.getString("access_token"))
+                record.put("refresh_token", refreshed.optString("refresh_token", record.getString("refresh_token")))
+                record.put("expires_at", System.currentTimeMillis() + refreshed.optLong("expires_in") * 1000)
+                record.put("scope", scopes.joinToString(" "))
+                refreshed.optString("id_token").takeIf { it.isNotBlank() }?.let { record.put("id_token", it) }
+                ChatGptAccountStore.save(context, record)
+            }
+
+            val input = org.json.JSONArray()
+            input.put(org.json.JSONObject().put("role", "system").put("content",
+                "You are Nova, a natural, helpful Android assistant. Use the supplied conversation history for follow-ups. Be clear and conversational. Do not claim phone actions happened unless Nova verifies them. Never perform or authorize payments, transfers, purchases, subscriptions, recharges or paid orders. Nova's separate safety layer controls all device actions."))
+            for (i in 0 until history.length()) {
+                val item = history.optJSONObject(i) ?: continue
+                val role = item.optString("role")
+                if (role == "user" || role == "assistant") {
+                    input.put(org.json.JSONObject().put("role", role)
+                        .put("content", item.optString("content").take(1600)))
+                }
+            }
+            val body = org.json.JSONObject().put("model", CHATGPT_MODEL)
+                .put("input", input).put("store", false).put("stream", true)
+            val connection = URL("$CHATGPT_RESOURCE/responses").openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 20_000
+            connection.readTimeout = 90_000
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer ${record.getString("access_token")}")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            if (code !in 200..299) {
+                val detail = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                connection.disconnect()
+                error("ChatGPT request failed (HTTP $code): ${detail.take(160)}")
+            }
+            val answer = StringBuilder()
+            var completed = false
+            connection.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { line ->
+                    if (!line.startsWith("data: ")) return@forEach
+                    val data = line.removePrefix("data: ").trim()
+                    if (data == "[DONE]") return@forEach
+                    try {
+                        val event = org.json.JSONObject(data)
+                        when (event.optString("type")) {
+                            "response.output_text.delta" -> answer.append(event.optString("delta"))
+                            "response.completed" -> completed = true
+                            "response.failed" -> error("ChatGPT response failed.")
+                        }
+                    } catch (_: org.json.JSONException) { }
+                }
+            }
+            connection.disconnect()
+            require(completed && answer.isNotBlank()) { "ChatGPT stream ended before a completed response." }
+            AIProviderManager.Result(true, answer.toString().trim(), "ChatGPT")
+        } catch (e: Exception) {
+            AIProviderManager.Result(false, e.message ?: "ChatGPT request failed.", "ChatGPT")
+        }
+    }
+
     fun disconnect(context: Context) {
         context.getSharedPreferences(CHATGPT_PREFS, Context.MODE_PRIVATE).edit()
             .remove("credentials").remove("email").putBoolean("verified_connection", false)
