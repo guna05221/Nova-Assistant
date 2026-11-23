@@ -154,8 +154,8 @@ object NovaCommand {
         val stored = prefs.getString("conversation_history", null)
         val history = try { if (stored.isNullOrBlank()) org.json.JSONArray() else org.json.JSONArray(stored) }
             catch (_: Exception) { org.json.JSONArray() }
-        history.put(org.json.JSONObject().put("role", "user").put("content", latest.take(1600)))
-        while (history.length() > 12) history.remove(0)
+        // The API client appends the current prompt exactly once after this saved history.
+        while (history.length() > 10) history.remove(0)
         return history
     }
 
