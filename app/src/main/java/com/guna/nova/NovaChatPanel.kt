@@ -16,6 +16,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+private val ChatPanelBg = Color(0xFF171F35)
+private val ChatPanelPurple = Color(0xFFA99BFF)
+private val ChatPanelMint = Color(0xFF65E5D5)
+private val ChatPanelMuted = Color(0xFFAAB4CC)
+
 data class NovaChatLine(val speaker: String, val text: String, val id: Long = System.nanoTime())
 
 @Composable
@@ -29,7 +34,7 @@ fun NovaChatPanel(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = NovaPanel),
+        colors = CardDefaults.cardColors(containerColor = ChatPanelBg),
         shape = RoundedCornerShape(22.dp)
     ) {
         Column(
@@ -39,17 +44,17 @@ fun NovaChatPanel(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("CHAT WITH NOVA", color = Color.White, fontWeight = FontWeight.Bold)
-                    Text("Type or speak naturally in Tamil, English or Tanglish", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+                    Text("Type or speak naturally in Tamil, English or Tanglish", color = ChatPanelMuted, style = MaterialTheme.typography.bodySmall)
                 }
                 Surface(color = Color(0xFF263451), shape = RoundedCornerShape(50)) {
-                    Text("VOICE + TEXT", color = NovaMint, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
+                    Text("VOICE + TEXT", color = ChatPanelMint, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall)
                 }
             }
 
             if (messages.isEmpty()) {
                 Text(
                     "Hi! I'm here. You can type a message or tap the microphone to talk.",
-                    color = NovaMuted,
+                    color = ChatPanelMuted,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(vertical = 12.dp)
                 )
@@ -69,7 +74,7 @@ fun NovaChatPanel(
                                 modifier = Modifier.widthIn(max = 300.dp)
                             ) {
                                 Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
-                                    Text(item.speaker, color = if (item.speaker == "YOU") NovaMint else NovaPurple, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                                    Text(item.speaker, color = if (item.speaker == "YOU") ChatPanelMint else ChatPanelPurple, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                     Spacer(Modifier.height(3.dp))
                                     Text(item.text, color = Color.White, style = MaterialTheme.typography.bodyMedium)
                                 }
@@ -85,7 +90,7 @@ fun NovaChatPanel(
                     modifier = Modifier.size(50.dp),
                     contentPadding = PaddingValues(0.dp),
                     shape = RoundedCornerShape(15.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NovaMint)
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ChatPanelMint)
                 ) {
                     Icon(Icons.Default.Mic, contentDescription = "Speak to Nova")
                 }
@@ -93,15 +98,15 @@ fun NovaChatPanel(
                     value = input,
                     onValueChange = onInputChange,
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Message Nova…", color = NovaMuted) },
+                    placeholder = { Text("Message Nova…", color = ChatPanelMuted) },
                     maxLines = 4,
                     shape = RoundedCornerShape(16.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
-                        focusedBorderColor = NovaPurple,
+                        focusedBorderColor = ChatPanelPurple,
                         unfocusedBorderColor = Color(0xFF46516D),
-                        cursorColor = NovaMint
+                        cursorColor = ChatPanelMint
                     )
                 )
                 Button(
@@ -110,7 +115,7 @@ fun NovaChatPanel(
                     modifier = Modifier.size(50.dp),
                     contentPadding = PaddingValues(0.dp),
                     shape = RoundedCornerShape(15.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = NovaPurple, contentColor = Color(0xFF17132D))
+                    colors = ButtonDefaults.buttonColors(containerColor = ChatPanelPurple, contentColor = Color(0xFF17132D))
                 ) {
                     Icon(Icons.Default.Send, contentDescription = "Send message")
                 }
