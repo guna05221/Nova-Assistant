@@ -65,6 +65,23 @@ object NovaCommand {
             }
         }
 
+        if (containsAny(command, "cancel task", "stop task", "cancel nova task", "stop nova task", "பணியை நிறுத்து", "task cancel pannu")) {
+            NovaAutonomousAgent.cancel()
+            say(appContext, "I've cancelled the active task. No further steps will run.")
+            return
+        }
+
+        if (isMultiStepRequest(command)) {
+            say(appContext, "I'll work through this one step at a time and verify each screen change. You can say cancel task to stop.")
+            NovaAutonomousAgent.start(
+                appContext,
+                original,
+                onStatus = { status -> statusOnly(appContext, status) },
+                onComplete = { result -> say(appContext, result) }
+            )
+            return
+        }
+
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val directIntent = understand(command, prefs.getString("last_app", null))
 
@@ -305,6 +322,15 @@ object NovaCommand {
         history.put(org.json.JSONObject().put("role", "assistant").put("content", answer.take(2400)))
         while (history.length() > 12) history.remove(0)
         prefs.edit().putString("conversation_history", history.toString()).apply()
+    }
+
+    private fun isMultiStepRequest(text: String): Boolean {
+        val value = text.lowercase(Locale.ROOT)
+        val hasSequence = value.contains(" then ") || value.contains(" and then ") ||
+            value.contains(" after that ") || value.contains(",")
+        val actionWords = listOf("open ", "launch ", "search ", "find ", "click ", "tap ",
+            "select ", "play ", "scroll ", "type ", "enter ")
+        return hasSequence && actionWords.count { value.contains(it) } >= 2
     }
 
     private fun isCapabilityQuestion(text: String): Boolean = containsAny(
