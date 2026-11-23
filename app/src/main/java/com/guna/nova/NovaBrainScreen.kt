@@ -11,6 +11,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -34,6 +41,18 @@ fun NovaBrainScreen(
     onDisconnectChatGpt: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    var liveConnected by remember { mutableStateOf(chatGptConnected) }
+    var liveStatus by remember { mutableStateOf(connectionStatus) }
+    var liveEmail by remember { mutableStateOf(ChatGptAccountStore.email(context)) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            liveConnected = ChatGptAccountStore.isConnected(context)
+            liveStatus = ChatGptAccountStore.status(context)
+            liveEmail = ChatGptAccountStore.email(context)
+            delay(700)
+        }
+    }
     val pulse = rememberInfiniteTransition(label = "brain-pulse")
     val scale = pulse.animateFloat(
         initialValue = 0.96f,
@@ -80,18 +99,18 @@ fun NovaBrainScreen(
         BrainProviderCard(
             title = "ChatGPT",
             subtitle = "Primary brain · OpenAI",
-            status = if (chatGptConnected) "Connected" else "Not connected",
+            status = if (liveConnected) "Connected" else "Not connected",
             primary = true
         )
         Button(
-            onClick = if (chatGptConnected) onDisconnectChatGpt else onConnectChatGpt,
+            onClick = if (liveConnected) onDisconnectChatGpt else onConnectChatGpt,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
         ) {
-            Text(if (chatGptConnected) "Disconnect ChatGPT" else "Connect ChatGPT")
+            Text(if (liveConnected) "Disconnect ChatGPT" else "Connect ChatGPT")
         }
         Text(
-            connectionStatus,
+            if (liveConnected && liveEmail.isNotBlank()) "$liveEmail · ChatGPT plan permission verified" else liveStatus,
             color = BrainMuted,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.fillMaxWidth()
