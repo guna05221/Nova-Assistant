@@ -244,7 +244,7 @@ object NovaAutonomousAgent {
             }
             val now = android.os.SystemClock.elapsedRealtime()
             if (now - lastAnnouncement >= 15_000L) {
-                reportStatus("Waiting for $appLabel to finish loading before searching")
+                onStatus("Waiting for $appLabel to finish loading before searching")
                 lastAnnouncement = now
             }
             delay(1_500L)
