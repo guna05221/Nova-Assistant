@@ -154,9 +154,10 @@ class NovaOverlayService : Service() {
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.END
+            // Keep the compact pill below the app header, away from the chat composer.
+            gravity = Gravity.TOP or Gravity.END
             x = dp(14)
-            y = dp(105)
+            y = dp(92)
         }
 
         var downX = 0f
