@@ -158,7 +158,16 @@ object ChatGptAccountManager {
                     when (event.optString("type")) {
                         "response.output_text.delta" -> answer.append(event.optString("delta"))
                         "response.completed" -> completed = true
-                        "response.failed" -> error("ChatGPT response failed.")
+                        "response.failed" -> {
+                            val response = event.optJSONObject("response")
+                            val failure = event.optJSONObject("error") ?: response?.optJSONObject("error")
+                            val detail = listOf(
+                                failure?.optString("code").orEmpty(),
+                                response?.optString("status").orEmpty(),
+                                failure?.optString("message").orEmpty()
+                            ).filter { it.isNotBlank() }.joinToString(" · ")
+                            error(if (detail.isNotBlank()) "ChatGPT response failed: ${detail.take(220)}" else "ChatGPT response failed (no error details).")
+                        }
                     }
                 } catch (_: org.json.JSONException) { }
             }
@@ -383,9 +392,24 @@ object ChatGptAccountManager {
                 if (data == "[DONE]") return@forEach
                 try {
                     val event = JSONObject(data)
-                    if (event.optString("type") == "response.completed") completed = true
-                    if (event.optString("type") == "response.failed") {
-                        throw IllegalStateException("ChatGPT reported a failed response.")
+                    when (event.optString("type")) {
+                        "response.completed" -> completed = true
+                        "response.failed" -> {
+                            val response = event.optJSONObject("response")
+                            val error = event.optJSONObject("error") ?: response?.optJSONObject("error")
+                            val code = error?.optString("code").orEmpty()
+                            val message = error?.optString("message").orEmpty()
+                            val status = response?.optString("status").orEmpty()
+                            val detail = listOf(code, status, message).filter { it.isNotBlank() }.joinToString(" · ")
+                            throw IllegalStateException(
+                                if (detail.isNotBlank()) "ChatGPT response failed: ${detail.take(220)}"
+                                else "ChatGPT response failed (OpenAI returned no error details)."
+                            )
+                        }
+                        "error" -> {
+                            val error = event.optJSONObject("error") ?: event
+                            throw IllegalStateException("ChatGPT stream error: ${error.optString("code")} ${error.optString("message")}".trim().take(220))
+                        }
                     }
                 } catch (e: org.json.JSONException) { }
             } }
