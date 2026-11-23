@@ -46,8 +46,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val NovaBackground = Color(0xFF0B1020)
-private val NovaPanel = Color(0xFF171F35)
+private val NovaBackground = Color(0xFF212121)
+private val NovaPanel = Color(0xFF2B2B2B)
 private val NovaPurple = Color(0xFFA99BFF)
 private val NovaMint = Color(0xFF65E5D5)
 private val NovaMuted = Color(0xFFAAB4CC)
@@ -57,6 +57,17 @@ class MainActivity : ComponentActivity() {
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
+
+    override fun onResume() {
+        super.onResume()
+        NovaOverlayService.chatScreenVisible = true
+        NovaOverlayService.hide(this)
+    }
+
+    override fun onPause() {
+        NovaOverlayService.chatScreenVisible = false
+        super.onPause()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -445,6 +456,10 @@ private fun FeatureCard(
 private fun friendlyStatus(raw: String): String {
     val value = raw.lowercase()
     return when {
+        value.contains("http 429") || value.contains("http 503") || value.contains("too many requests") ->
+            "Online research is temporarily busy. Please try again shortly."
+        Regex("http\\s+\\d{3}").containsMatchIn(value) ->
+            "Nova could not complete that online request. Please try again in a moment."
         value.startsWith("copy failed:") || value.startsWith("copied") || value.startsWith("pasted") || value.startsWith("i couldn't paste") -> raw
         value.contains("model load failed") -> "Voice model could not load. Check the model setup."
         value.contains("microphone") && value.contains("error") -> "Microphone problem: $raw"
@@ -543,12 +558,12 @@ private fun MemoryLibraryScreen(
 
 @Composable
 private fun ActivityLibraryScreen(instructions: List<NovaWorkspaceStore.Instruction>, status: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Activity", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("CURRENT STATUS", color = NovaMint, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Text(status, color = Color.White)
+                Text(friendlyStatus(status), color = Color.White)
             }
         }
         val ordered = instructions.sortedByDescending { it.updatedAt }
@@ -572,7 +587,7 @@ private fun ActivityLibraryScreen(instructions: List<NovaWorkspaceStore.Instruct
 
 @Composable
 private fun EmptyLibraryCard(title: String, detail: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, color = Color.White, fontWeight = FontWeight.SemiBold)
             Text(detail, color = NovaMuted, style = MaterialTheme.typography.bodySmall)
