@@ -29,9 +29,26 @@ private val ChatWebMuted = Color(0xFFB4B4B4)
 fun ChatGptVirtualScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     fun openChatGpt() {
-        runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://chatgpt.com/")))
+        val url = Uri.parse("https://chatgpt.com/")
+        // Explicit browser packages prevent verified links opening the ChatGPT app.
+        val browserPackages = listOf(
+            "com.android.chrome", "com.chrome.beta", "com.chrome.dev",
+            "com.sec.android.app.sbrowser", "org.mozilla.firefox",
+            "com.microsoft.emmx", "com.brave.browser", "com.opera.browser"
+        )
+        for (browser in browserPackages) {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, url).apply {
+                    addCategory(Intent.CATEGORY_BROWSABLE)
+                    setPackage(browser)
+                }
+                context.startActivity(intent)
+                return
+            } catch (_: Exception) { /* try next installed browser */ }
         }
+        android.widget.Toast.makeText(context,
+            "No supported browser found. Install or enable Chrome, then try again.",
+            android.widget.Toast.LENGTH_LONG).show()
     }
 
     Column(
