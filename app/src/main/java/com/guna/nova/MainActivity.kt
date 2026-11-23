@@ -51,6 +51,7 @@ private val NovaPurple = Color(0xFFA99BFF)
 private val NovaMint = Color(0xFF65E5D5)
 private val NovaMuted = Color(0xFFAAB4CC)
 
+@OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -271,8 +272,8 @@ class MainActivity : ComponentActivity() {
                                     onSend = { sendChatMessage() },
                                     onVoice = { startVoiceChat() },
                                     onSuggestion = { prompt ->
-                                        chatInput = prompt
-                                        sendChatMessage()
+                                        chatMessages.add(NovaChatLine("YOU", prompt))
+                                        NovaCommand.execute(this@MainActivity, prompt)
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )
