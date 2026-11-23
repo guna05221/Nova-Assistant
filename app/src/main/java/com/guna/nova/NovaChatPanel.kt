@@ -8,6 +8,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Mic
@@ -17,7 +20,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
@@ -44,41 +49,25 @@ fun NovaChatPanel(
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
-    Column(
-        modifier = modifier.fillMaxSize().background(ChatPanelBg).imePadding()
-    ) {
+    Column(modifier = modifier.fillMaxSize().background(ChatPanelBg).imePadding()) {
         if (messages.isEmpty()) {
-            Box(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 22.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Surface(color = ChatPanelAccent.copy(alpha = 0.15f), shape = RoundedCornerShape(22.dp)) {
-                        Icon(
-                            Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = ChatPanelAccent,
-                            modifier = Modifier.padding(17.dp).size(34.dp)
-                        )
+                    Surface(color = ChatPanelAccent.copy(alpha = .15f), shape = RoundedCornerShape(22.dp)) {
+                        Icon(Icons.Default.AutoAwesome, null, tint = ChatPanelAccent,
+                            modifier = Modifier.padding(17.dp).size(34.dp))
                     }
                     Spacer(Modifier.height(22.dp))
-                    Text(
-                        "What can I help with?",
-                        color = ChatPanelText,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center
-                    )
+                    Text("What can I help with?", color = ChatPanelText,
+                        style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center)
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Ask Nova anything, or tell it what you'd like to get done.",
-                        color = ChatPanelMuted,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center
-                    )
+                    Text("Ask Nova anything, or tell it what you'd like to get done.",
+                        color = ChatPanelMuted, style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center)
                     Spacer(Modifier.height(24.dp))
                     listOf(
                         "Explain something" to "Explain Java interfaces with a simple example",
@@ -86,11 +75,9 @@ fun NovaChatPanel(
                         "Plan something" to "Help me plan my day"
                     ).forEach { (title, prompt) ->
                         Surface(
-                            color = ChatPanelSurface,
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.035f)),
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
-                                .clickable { onSuggestion(prompt) }
+                            color = ChatPanelSurface, shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = .04f)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onSuggestion(prompt) }
                         ) {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 13.dp)) {
                                 Text(title, color = ChatPanelText, fontWeight = FontWeight.Medium)
@@ -103,8 +90,7 @@ fun NovaChatPanel(
             }
         } else {
             LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                state = listState, modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(22.dp)
             ) {
@@ -116,97 +102,70 @@ fun NovaChatPanel(
                                 shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp, bottomStart = 22.dp, bottomEnd = 7.dp),
                                 modifier = Modifier.widthIn(max = 320.dp)
                             ) {
-                                Text(
-                                    item.text,
-                                    color = ChatPanelText,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                                )
+                                Text(item.text, color = ChatPanelText, style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
                             }
                         }
                     } else {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Surface(color = ChatPanelAccent.copy(alpha = 0.15f), shape = CircleShape) {
-                                Icon(
-                                    Icons.Default.AutoAwesome,
-                                    contentDescription = "Nova",
-                                    tint = ChatPanelAccent,
-                                    modifier = Modifier.padding(7.dp).size(18.dp)
-                                )
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                            Surface(color = ChatPanelAccent.copy(alpha = .15f), shape = CircleShape) {
+                                Icon(Icons.Default.AutoAwesome, "Nova", tint = ChatPanelAccent,
+                                    modifier = Modifier.padding(7.dp).size(18.dp))
                             }
                             Spacer(Modifier.width(11.dp))
-                            Text(
-                                item.text,
-                                color = ChatPanelText,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f).padding(top = 3.dp)
-                            )
+                            Text(item.text, color = ChatPanelText, style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f).padding(top = 3.dp))
                         }
                     }
                 }
             }
         }
 
-        Column(
-            modifier = Modifier.fillMaxWidth().background(ChatPanelBg)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
-        ) {
+        Column(Modifier.fillMaxWidth().background(ChatPanelBg).padding(horizontal = 14.dp, vertical = 8.dp)) {
             Surface(
-                color = ChatPanelSurface,
-                shape = RoundedCornerShape(28.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.045f)),
+                color = ChatPanelSurface, shape = RoundedCornerShape(28.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = .07f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 7.dp, bottom = 7.dp),
-                    verticalAlignment = Alignment.Bottom
+                    Modifier.fillMaxWidth().defaultMinSize(minHeight = 58.dp)
+                        .padding(start = 7.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onVoice, modifier = Modifier.size(42.dp)) {
-                        Icon(Icons.Default.Mic, contentDescription = "Voice input", tint = ChatPanelMuted)
+                        Icon(Icons.Default.Mic, "Voice input", tint = ChatPanelMuted)
                     }
-                    OutlinedTextField(
+                    BasicTextField(
                         value = input,
                         onValueChange = onInputChange,
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Message Nova", color = ChatPanelMuted) },
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = ChatPanelText),
+                        cursorBrush = SolidColor(ChatPanelAccent),
                         maxLines = 5,
-                        shape = RoundedCornerShape(22.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = ChatPanelText,
-                            unfocusedTextColor = ChatPanelText,
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
-                            cursorColor = ChatPanelAccent,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent
-                        )
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = { if (input.isNotBlank()) onSend() }),
+                        decorationBox = { innerTextField ->
+                            Box {
+                                if (input.isBlank()) Text("Message Nova", color = ChatPanelMuted,
+                                    style = MaterialTheme.typography.bodyLarge)
+                                innerTextField()
+                            }
+                        }
                     )
-                    Spacer(Modifier.width(4.dp))
                     Surface(
-                        color = if (input.isNotBlank()) ChatPanelText else ChatPanelRaised,
+                        color = if (input.isNotBlank()) ChatPanelAccent else ChatPanelRaised,
                         shape = CircleShape,
-                        modifier = Modifier.padding(bottom = 4.dp).size(40.dp)
-                            .clickable(enabled = input.isNotBlank()) { onSend() }
+                        modifier = Modifier.size(42.dp).clickable(enabled = input.isNotBlank()) { onSend() }
                     ) {
-                        Icon(
-                            Icons.Default.Send,
-                            contentDescription = "Send message",
-                            tint = if (input.isNotBlank()) ChatPanelBg else ChatPanelMuted,
-                            modifier = Modifier.padding(10.dp)
-                        )
+                        Icon(Icons.Default.Send, "Send message",
+                            tint = if (input.isNotBlank()) Color(0xFF171421) else ChatPanelMuted,
+                            modifier = Modifier.padding(11.dp))
                     }
                 }
             }
-            Text(
-                "Nova can make mistakes. Check important information.",
-                color = ChatPanelMuted,
-                style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp)
-            )
+            Text("Nova can make mistakes. Check important information.",
+                color = ChatPanelMuted, style = MaterialTheme.typography.labelSmall,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp))
         }
     }
 }
