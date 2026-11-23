@@ -323,7 +323,7 @@ class MainActivity : ComponentActivity() {
                                     Text("AI PROVIDERS", color = NovaMint, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                                     AIProviderSettingsCard()
                                     Text("ON-DEVICE AI", color = NovaMint, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                                    Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp)) {
+                                    Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
                                         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                                             Text("Qwen3.5 4B · Q4_K_M", color = Color.White, fontWeight = FontWeight.SemiBold)
                                             Text("Run supported conversations privately on this phone after downloading the model.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
@@ -480,17 +480,17 @@ private fun ResearchLibraryScreen(report: NovaResearchStore.Report?, onOpen: (St
         Text("Research", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text("Recommendations and evidence Nova has gathered.", color = NovaMuted)
         if (report == null) EmptyLibraryCard("No research reports yet", "Ask Nova to research a product, course, restaurant or anything you want to compare.")
-        else Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(22.dp)) {
+        else Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("LATEST REPORT", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 Text(report.query, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text("Saved " + SimpleDateFormat("dd MMM yyyy · hh:mm a", Locale.getDefault()).format(Date(report.savedAt)), color = NovaMuted, style = MaterialTheme.typography.labelSmall)
-                HorizontalDivider(color = Color(0xFF34415E))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
                 Text(report.text, color = Color(0xFFE7EAF3), style = MaterialTheme.typography.bodyMedium)
                 if (report.sources.isNotEmpty()) {
                     Text("SOURCES", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     report.sources.forEach { source ->
-                        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF222D49)), shape = RoundedCornerShape(14.dp)) {
+                        Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(source.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 3)
                                 TextButton(onClick = { onOpen(source.url) }) { Text("Open", color = NovaMint) }
@@ -545,7 +545,7 @@ private fun MemoryLibraryScreen(
         Text("BILLS & SUBSCRIPTIONS", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
         if (payments.isEmpty()) EmptyLibraryCard("Nothing tracked yet", "Saved bill and subscription notices will appear here.")
         payments.take(6).forEach { notice ->
-            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(16.dp)) {
+            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(notice.title, color = Color.White, fontWeight = FontWeight.SemiBold)
                     Text(notice.provider + " · " + notice.status.name, color = NovaMuted, style = MaterialTheme.typography.bodySmall)
