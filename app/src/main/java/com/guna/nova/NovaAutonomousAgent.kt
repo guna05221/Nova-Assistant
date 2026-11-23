@@ -50,8 +50,7 @@ object NovaAutonomousAgent {
                         onComplete("I stopped because the task reached its time limit. $lastAction.")
                         return@launch
                     }
-                    val service = NovaAccessibilityService.instance
-                    val screen = withContext(Dispatchers.Main) { service?.observeActiveScreen(80) }
+                    val screen = observeScreenWithRetry(runId)
                     if (screen == null) {
                         onComplete("I can't observe the current app. Enable Nova Accessibility and try again. Nothing else was done.")
                         return@launch
@@ -172,22 +171,35 @@ object NovaAutonomousAgent {
                     actionsExecuted++
                     lastAction = plan.reply.ifBlank { "${plan.action} requested" }
                     onStatus("Checking: $lastAction")
-                    delay(850L)
-                    if (generation.get() != runId) return@launch
-                    val after = withContext(Dispatchers.Main) {
-                        NovaAccessibilityService.instance?.observeActiveScreen(80)
-                    }
+                    val after = observeScreenWithRetry(runId)
                     if (after == null) {
-                        onComplete("The action was attempted, but I couldn't verify the result. I stopped here.")
+                        onComplete("The action was attempted, but Android did not expose a readable screen after several checks. I stopped without claiming success.")
                         return@launch
                     }
                     lastAction = "${plan.action} completed; fresh screen observation captured"
+                    onStatus("Screen verified; continuing")
                 }
                 if (generation.get() == runId) onComplete("I reached the $MAX_STEPS-step safety limit. $lastAction.")
             } catch (_: Exception) {
                 if (generation.get() == runId) onComplete("The task encountered an error and stopped safely. $lastAction.")
             }
         }
+    }
+
+    /**
+     * App transitions can briefly leave rootInActiveWindow unavailable. Retry on the
+     * main thread instead of treating one transient null as a permanent failure.
+     */
+    private suspend fun observeScreenWithRetry(runId: Long): JSONObject? {
+        repeat(8) { attempt ->
+            if (generation.get() != runId) return null
+            val snapshot = withContext(Dispatchers.Main) {
+                NovaAccessibilityService.instance?.observeActiveScreen(80)
+            }
+            if (snapshot != null && snapshot.optString("package").isNotBlank()) return snapshot
+            if (attempt < 7) delay(450L)
+        }
+        return null
     }
 
     private data class Plan(val action: String, val target: String, val text: String, val reply: String)
