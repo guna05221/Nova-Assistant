@@ -105,8 +105,7 @@ object AIProviderManager {
 
     /** Gemini primary, Groq fallback. Returns null if neither provider is configured/available. */
     fun plan(context: Context, systemPrompt: String, userText: String): Result {
-        val chatGpt = ChatGptAccountManager.plan(context, systemPrompt, userText)
-        if (chatGpt != null && chatGpt.ok) return chatGpt
+        // ChatGPT website sign-in is manual-only; it is not a supported background API.
         val geminiKey = get(context, GEMINI)
         if (geminiKey.isNotBlank()) {
             try {
@@ -219,8 +218,7 @@ object AIProviderManager {
             "but useful. Do not claim to have performed phone actions unless confirmed by the app. " +
             "Never make payments, transfers, purchases, subscriptions, or place paid orders, even if confirmed. " +
             "If asked to do these, politely refuse and offer safe information instead."
-        val chatGpt = ChatGptAccountManager.chat(context, history)
-        if (chatGpt != null && chatGpt.ok) return chatGpt
+        // ChatGPT website sign-in is manual-only; it is not a supported background API.
         val geminiKey = get(context, GEMINI)
         if (geminiKey.isNotBlank()) {
             try {
