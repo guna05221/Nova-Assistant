@@ -584,10 +584,14 @@ object NovaCommand {
 
     private fun say(context: Context, message: String) {
         context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
-            .putString("status", message).putBoolean("running", true).apply()
+            .putString("status", message)
+            .putString("last_assistant_message", message)
+            .putLong("last_assistant_at", System.currentTimeMillis())
+            .putBoolean("running", true)
+            .apply()
         NovaOverlayService.assistant(context, message)
         NovaSpeech.speak(context, message)
-        // The main screen also displays status; speech output is handled by NovaSpeech.
+        // The main chat screen observes the saved response and renders it as a chat bubble.
     }
 
     private fun openApp(context: Context, label: String): Boolean {
