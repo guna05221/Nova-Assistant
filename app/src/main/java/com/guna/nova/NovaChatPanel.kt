@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -108,7 +109,7 @@ fun NovaChatPanel(
                     } else {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                             Surface(color = ChatPanelAccent.copy(alpha = .15f), shape = CircleShape) {
-                                Icon(Icons.Default.AutoAwesome, "Phone command", tint = ChatPanelAccent,
+                                Icon(Icons.Default.Smartphone, "Phone command", tint = ChatPanelAccent,
                                     modifier = Modifier.padding(7.dp).size(18.dp))
                             }
                             Spacer(Modifier.width(11.dp))
