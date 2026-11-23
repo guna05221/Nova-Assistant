@@ -89,7 +89,16 @@ object NovaCommand {
             return
         }
         if (intent.kind == "UNKNOWN") {
-            say(appContext, "I can perform specific phone commands, but natural AI conversation and automatic task planning have been removed. Try: open YouTube, open settings, go home, go back, search for something, or scroll down.")
+            scope.launch {
+                val history = conversationHistory(appContext, "")
+                val result = GroqApiClient.ask(appContext, command, history)
+                if (result.answer != null) {
+                    saveConversation(appContext, command, result.answer)
+                    say(appContext, result.answer)
+                } else {
+                    say(appContext, result.error ?: "Nova couldn't answer that right now.")
+                }
+            }
             return
         }
         executeIntent(appContext, intent)
