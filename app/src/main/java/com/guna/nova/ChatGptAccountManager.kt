@@ -357,7 +357,7 @@ object ChatGptAccountManager {
         val body = JSONObject().apply {
             put("model", model)
             put("instructions", "Reply with exactly: Nova connection verified.")
-            put("input", JSONArray().put(JSONObject().put("role", "user")
+            put("input", org.json.JSONArray().put(JSONObject().put("role", "user")
                 .put("content", "Verify the Nova connection.")))
             put("store", false)
             put("stream", true)
