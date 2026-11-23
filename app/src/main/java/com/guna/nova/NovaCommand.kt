@@ -549,7 +549,7 @@ object NovaCommand {
 
         // Compound YouTube requests must be split into app + query, not treated as one app name.
         val youtubeSearch = Regex(
-            """^(?:please )?(?:open|launch)\\s+(?:the\\s+)?youtube(?:\\s+app)?\\s+and\\s+(?:search(?:\\s+for)?|look\\s+for)\\s+(.+)$""",
+            """^(?:please )?(?:open|launch)\s+(?:the\s+)?youtube(?:\s+app)?\s+and\s+(?:search(?:\s+for)?|look\s+for)\s+(.+)$""",
             RegexOption.IGNORE_CASE
         ).matchEntire(text.trim())
         if (youtubeSearch != null) {
