@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.webkit.CookieManager
-import android.webkit.SafeBrowsingResponse
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -105,7 +104,7 @@ fun ChatGptVirtualScreen(modifier: Modifier = Modifier) {
                         }
                     }
                     if (android.os.Build.VERSION.SDK_INT >= 26) {
-                        setSafeBrowsingEnabled(true)
+                        settings.setSafeBrowsingEnabled(true)
                     }
                     webView = this
                     loadUrl("https://chatgpt.com/")
