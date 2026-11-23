@@ -84,7 +84,15 @@ object NovaCommand {
                         say(appContext, "I've finished the online research and saved the report with clickable source links in Nova. Open Nova to review the recommendations.")
                     }
                 } else {
-                    withContext(Dispatchers.Main) { say(appContext, friendlyResponse(result.error)) }
+                    withContext(Dispatchers.Main) {
+                        val rateLimited = result.error.contains("429") || result.error.contains("quota", ignoreCase = true) ||
+                            result.error.contains("too many requests", ignoreCase = true)
+                        if (rateLimited && openResearchFallback(appContext, original)) {
+                            say(appContext, "My live research provider has reached its request limit. I've opened a web search so you can continue. I haven't verified or compared those results yet.")
+                        } else {
+                            say(appContext, friendlyResponse(result.error))
+                        }
+                    }
                 }
             }
             return
@@ -181,11 +189,8 @@ object NovaCommand {
             "good ", "search online", "look up", "where can i", "which one", "suggest"
         )
         val foodIntent = listOf("i want to eat", "i'm hungry", "im hungry", "hungry", "find food", "nearby restaurant", "restaurants near", "what should i eat")
-        val generalGoal = listOf("i need", "i want", "looking for", "help me choose", "show me options")
-        val hasTopic = value.split(Regex("\\s+")).any { it.length > 2 }
         return explicitResearch.any { value.contains(it) } ||
-            foodIntent.any { value.contains(it) } ||
-            (generalGoal.any { value.contains(it) } && hasTopic)
+            foodIntent.any { value.contains(it) }
     }
 
     private suspend fun processUnknownUtterance(context: Context, utterance: String, requestId: Long) {
@@ -472,6 +477,12 @@ object NovaCommand {
                 if (query.isBlank()) say(context, "What should I search for?")
                 else { search(context, query); remember(context, intent.kind, query) }
             }
+            "YOUTUBE_SEARCH" -> {
+                val query = intent.value.orEmpty()
+                val opened = openYouTubeSearch(context, query)
+                say(context, if (opened) "Opening YouTube search results for $query." else "I couldn't open YouTube search. Please check whether YouTube or a browser is available.")
+                if (opened) remember(context, "YOUTUBE_SEARCH", query)
+            }
             "FOOD_SEARCH" -> {
                 val preference = intent.value?.takeIf { it.isNotBlank() } ?: "restaurants and food"
                 val opened = FoodDiscovery.findNearby(context, preference)
@@ -497,7 +508,8 @@ object NovaCommand {
         // Natural-language fallback for common goals when the local model returns invalid output.
         if (containsAny(t, "i am hungry", "i'm hungry", "im hungry", "hungry", "find food", "food nearby",
                 "nearby restaurants", "restaurants near me", "want to eat", "something to eat",
-                "pasikkuthu", "pasikuthu", "saapidanum", "சாப்பிடணும்", "பசிக்குது", "உணவு தேடு"))
+                "order biryani", "want biryani", "biryani", "pasikkuthu", "pasikuthu", "saapidanum",
+                "சாப்பிடணும்", "பசிக்குது", "உணவு தேடு"))
             return BrainIntent("FOOD_SEARCH")
         if (t.contains("swiggy")) return BrainIntent("SEARCH_SWIGGY", text)
         if (t.contains("zomato")) return BrainIntent("SEARCH_ZOMATO", text)
@@ -534,6 +546,16 @@ object NovaCommand {
             return BrainIntent("SCROLL_DOWN")
         if (containsAny(t, "scroll up", "மேலே போ", "mela scroll", "scroll mela"))
             return BrainIntent("SCROLL_UP")
+
+        // Compound YouTube requests must be split into app + query, not treated as one app name.
+        val youtubeSearch = Regex(
+            """^(?:please )?(?:open|launch)\\s+(?:the\\s+)?youtube(?:\\s+app)?\\s+and\\s+(?:search(?:\\s+for)?|look\\s+for)\\s+(.+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(text.trim())
+        if (youtubeSearch != null) {
+            val query = youtubeSearch.groupValues[1].trim()
+            if (query.isNotBlank()) return BrainIntent("YOUTUBE_SEARCH", query)
+        }
 
         val searchPrefixes = listOf("search online for ", "search the web for ", "look up ", "find online ",
             "search for ", "search ", "google ")
@@ -623,6 +645,28 @@ object NovaCommand {
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(launch)
         return true
+    }
+
+    private fun openYouTubeSearch(context: Context, query: String): Boolean {
+        if (query.isBlank()) return false
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW,
+                Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(query)))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) { false }
+    }
+
+    private fun openResearchFallback(context: Context, query: String): Boolean {
+        if (query.isBlank()) return false
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW,
+                Uri.parse("https://www.google.com/search?q=" + Uri.encode(query)))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) { false }
     }
 
     private fun search(context: Context, query: String) {
