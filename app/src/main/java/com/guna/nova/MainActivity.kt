@@ -197,6 +197,12 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(horizontal = 10.dp)
                             )
                             NavigationDrawerItem(
+                                label = { Text("ChatGPT") }, selected = selectedTab == 6,
+                                icon = { Text("✳", color = NovaPurple) },
+                                onClick = { selectedTab = 6; scope.launch { drawerState.close() } },
+                                modifier = Modifier.padding(horizontal = 10.dp)
+                            )
+                            NavigationDrawerItem(
                                 label = { Text("Brain") }, selected = selectedTab == 4,
                                 icon = { Text("✳", color = NovaPurple) },
                                 onClick = { selectedTab = 4; scope.launch { drawerState.close() } },
@@ -252,6 +258,7 @@ class MainActivity : ComponentActivity() {
                                             3 -> "Recent activity"
                                             4 -> "Nova Brain · Intelligence engine"
                                             5 -> "Preferences and controls"
+                                            6 -> "ChatGPT website workspace"
                                             else -> "Hybrid AI assistant"
                                         },
                                         color = NovaMuted, style = MaterialTheme.typography.labelSmall
@@ -311,21 +318,15 @@ class MainActivity : ComponentActivity() {
                                     },
                                     modifier = Modifier.fillMaxSize()
                                 )
+                                6 -> ChatGptVirtualScreen(modifier = Modifier.fillMaxSize())
                                 4 -> NovaBrainScreen(
                                     chatGptConnected = ChatGptAccountStore.isConnected(this@MainActivity),
                                     geminiConnected = AIProviderManager.hasGemini(this@MainActivity),
                                     groqConnected = AIProviderManager.hasGroq(this@MainActivity),
                                     localReady = LocalAiManager.isDownloaded(this@MainActivity),
                                     connectionStatus = ChatGptAccountStore.status(this@MainActivity),
-                                    onConnectChatGpt = {
-                                        ChatGptAccountManager.startSignIn(this@MainActivity) { message ->
-                                            getSharedPreferences("nova_chatgpt", MODE_PRIVATE).edit()
-                                                .putString("status", message).apply()
-                                        }
-                                    },
-                                    onDisconnectChatGpt = {
-                                        ChatGptAccountManager.disconnect(this@MainActivity)
-                                    },
+                                    onConnectChatGpt = { selectedTab = 6 },
+                                    onDisconnectChatGpt = { selectedTab = 6 },
                                     modifier = Modifier.fillMaxSize()
                                 )
                                 1 -> Column(
