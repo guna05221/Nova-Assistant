@@ -12,7 +12,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
@@ -57,22 +56,22 @@ fun NovaChatPanel(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Surface(color = ChatPanelAccent.copy(alpha = .15f), shape = RoundedCornerShape(22.dp)) {
-                        Icon(Icons.Default.AutoAwesome, null, tint = ChatPanelAccent,
+                        Icon(Icons.Default.Smartphone, null, tint = ChatPanelAccent,
                             modifier = Modifier.padding(17.dp).size(34.dp))
                     }
                     Spacer(Modifier.height(22.dp))
-                    Text("What can I help with?", color = ChatPanelText,
+                    Text("Phone controls", color = ChatPanelText,
                         style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center)
                     Spacer(Modifier.height(8.dp))
-                    Text("Ask Nova anything, or tell it what you'd like to get done.",
+                    Text("Use direct commands to control supported phone features.",
                         color = ChatPanelMuted, style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center)
                     Spacer(Modifier.height(24.dp))
                     listOf(
-                        "Explain something" to "Explain Java interfaces with a simple example",
-                        "Write something" to "Help me write a professional email",
-                        "Plan something" to "Help me plan my day"
+                        "Open an app" to "Open YouTube",
+                        "Search the web" to "Search for Java tutorials",
+                        "Phone settings" to "Open settings"
                     ).forEach { (title, prompt) ->
                         Surface(
                             color = ChatPanelSurface, shape = RoundedCornerShape(16.dp),
@@ -109,7 +108,7 @@ fun NovaChatPanel(
                     } else {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                             Surface(color = ChatPanelAccent.copy(alpha = .15f), shape = CircleShape) {
-                                Icon(Icons.Default.AutoAwesome, "Nova", tint = ChatPanelAccent,
+                                Icon(Icons.Default.AutoAwesome, "Phone command", tint = ChatPanelAccent,
                                     modifier = Modifier.padding(7.dp).size(18.dp))
                             }
                             Spacer(Modifier.width(11.dp))
@@ -146,7 +145,7 @@ fun NovaChatPanel(
                         keyboardActions = KeyboardActions(onSend = { if (input.isNotBlank()) onSend() }),
                         decorationBox = { innerTextField ->
                             Box {
-                                if (input.isBlank()) Text("Message Nova", color = ChatPanelMuted,
+                                if (input.isBlank()) Text("Enter a phone command", color = ChatPanelMuted,
                                     style = MaterialTheme.typography.bodyLarge)
                                 innerTextField()
                             }
@@ -163,7 +162,7 @@ fun NovaChatPanel(
                     }
                 }
             }
-            Text("Nova can make mistakes. Check important information.",
+            Text("Direct phone commands only · AI features removed.",
                 color = ChatPanelMuted, style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp))
         }
