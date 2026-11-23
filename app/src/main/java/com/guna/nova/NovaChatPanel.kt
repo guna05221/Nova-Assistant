@@ -45,7 +45,7 @@ fun NovaChatPanel(
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
     Column(
-        modifier = modifier.fillMaxSize().background(ChatPanelBg)
+        modifier = modifier.fillMaxSize().background(ChatPanelBg).imePadding()
     ) {
         if (messages.isEmpty()) {
             Box(
