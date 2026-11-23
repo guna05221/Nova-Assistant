@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             var running by remember { mutableStateOf(false) }
             var status by remember { mutableStateOf("Ready when you are") }
+            var researchReport by remember { mutableStateOf(NovaResearchStore.latest(this@MainActivity)) }
             val localAi by LocalAiManager.state.collectAsState()
 
             LaunchedEffect(Unit) {
@@ -66,7 +67,8 @@ class MainActivity : ComponentActivity() {
                     val prefs = getSharedPreferences("nova_diagnostics", MODE_PRIVATE)
                     status = prefs.getString("status", "Ready when you are") ?: "Ready when you are"
                     running = prefs.getBoolean("running", false)
-                    delay(500)
+                    researchReport = NovaResearchStore.latest(this@MainActivity)
+                    delay(1000)
                 }
             }
 
@@ -319,6 +321,23 @@ class MainActivity : ComponentActivity() {
                             title = "Search the internet",
                             description = "Try: “Search online for Java developer jobs”."
                         )
+                        researchReport?.let { report ->
+                            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel.copy(alpha = 0.98f)), shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text("LATEST RESEARCH REPORT", color = NovaMint, fontWeight = FontWeight.Bold)
+                                    Text(report.query, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                    Text(report.text, color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+                                    if (report.sources.isNotEmpty()) {
+                                        Text("SOURCES · TAP TO OPEN", color = NovaMint, fontWeight = FontWeight.Bold)
+                                        report.sources.forEach { source ->
+                                            OutlinedButton(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) } }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                                                Text(source.title, maxLines = 2)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         FeatureCard(
                             icon = { Icon(Icons.Default.EditNote, null, tint = NovaMint) },
                             title = "Write or draft content",
