@@ -163,15 +163,18 @@ object NovaAutonomousAgent {
 
     private data class Plan(val action: String, val target: String, val text: String, val reply: String)
 
-    private fun parse(raw: String): Plan? = try {
-        val start = raw.indexOf('{')
-        val end = raw.lastIndexOf('}')
-        if (start < 0 || end <= start) return null
-        val json = JSONObject(raw.substring(start, end + 1))
-        val action = json.optString("action").uppercase(Locale.ROOT)
-        if (action !in setOf("DONE", "OPEN_APP", "CLICK", "TYPE", "SCROLL_UP", "SCROLL_DOWN", "BACK", "HOME")) return null
-        Plan(action, json.optString("target"), json.optString("text"), json.optString("reply").take(180))
-    } catch (_: Exception) { null }
+    private fun parse(raw: String): Plan? {
+        return try {
+            val start = raw.indexOf('{')
+            val end = raw.lastIndexOf('}')
+            if (start < 0 || end <= start) null else {
+                val json = JSONObject(raw.substring(start, end + 1))
+                val action = json.optString("action").uppercase(Locale.ROOT)
+                if (action !in setOf("DONE", "OPEN_APP", "CLICK", "TYPE", "SCROLL_UP", "SCROLL_DOWN", "BACK", "HOME")) null
+                else Plan(action, json.optString("target"), json.optString("text"), json.optString("reply").take(180))
+            }
+        } catch (_: Exception) { null }
+    }
 
     private fun hasUniqueVisibleLabel(
         snapshot: JSONObject,
