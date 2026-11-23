@@ -66,7 +66,8 @@ fun NovaChatScreen(
     var messages by remember { mutableStateOf(loadChat(context)) }
     var input by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var drawerOpen by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val localAi by LocalAiManager.state.collectAsState()
     var settingsOpen by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
 
@@ -122,7 +123,7 @@ fun NovaChatScreen(
     }
 
     ModalNavigationDrawer(
-        drawerState = rememberDrawerState(if (drawerOpen) DrawerValue.Open else DrawerValue.Closed),
+        drawerState = drawerState,
         gesturesEnabled = true,
         drawerContent = {
             ModalDrawerSheet(
@@ -145,7 +146,7 @@ fun NovaChatScreen(
                     onClick = {
                         messages = emptyList()
                         saveChat(context, emptyList())
-                        drawerOpen = false
+                        scope.launch { drawerState.close() }
                     },
                     icon = { Icon(Icons.Default.Add, null) },
                     modifier = Modifier.padding(horizontal = 10.dp)
@@ -157,7 +158,7 @@ fun NovaChatScreen(
                     NavigationDrawerItem(
                         label = { Text(messages.firstOrNull { it.role == "user" }?.text?.take(34) ?: "Current conversation", maxLines = 1) },
                         selected = true,
-                        onClick = { drawerOpen = false },
+                        onClick = { scope.launch { drawerState.close() } },
                         modifier = Modifier.padding(horizontal = 10.dp)
                     )
                 } else {
@@ -168,7 +169,7 @@ fun NovaChatScreen(
                 NavigationDrawerItem(
                     label = { Text("Settings") },
                     selected = false,
-                    onClick = { drawerOpen = false; settingsOpen = true },
+                    onClick = { scope.launch { drawerState.close() }; settingsOpen = true },
                     icon = { Icon(Icons.Default.Settings, null) },
                     modifier = Modifier.padding(10.dp)
                 )
@@ -184,7 +185,7 @@ fun NovaChatScreen(
                     modifier = Modifier.fillMaxWidth().statusBarsPadding().height(58.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { drawerOpen = true }) {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
                         Icon(Icons.Default.Menu, contentDescription = "Open menu", tint = ChatText)
                     }
                     Text("Nova", color = ChatText, fontWeight = FontWeight.SemiBold,
@@ -352,16 +353,16 @@ fun NovaChatScreen(
                 Text("AI providers", color = ChatMuted, style = MaterialTheme.typography.labelLarge)
                 AIProviderSettingsCard()
                 Text("On-device AI", color = ChatMuted, style = MaterialTheme.typography.labelLarge)
-                Text(LocalAiManager.state.collectAsState().value.status, color = ChatMuted,
+                Text(localAi.status, color = ChatMuted,
                     style = MaterialTheme.typography.bodySmall)
                 Button(
                     onClick = { LocalAiManager.downloadAndLoad(context) },
-                    enabled = !LocalAiManager.state.collectAsState().value.downloading && !LocalAiManager.state.collectAsState().value.ready,
+                    enabled = !localAi.downloading && !localAi.ready,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(when {
-                        LocalAiManager.state.collectAsState().value.ready -> "Local AI ready"
-                        LocalAiManager.state.collectAsState().value.downloading -> "Downloading / loading…"
+                        localAi.ready -> "Local AI ready"
+                        localAi.downloading -> "Downloading / loading…"
                         LocalAiManager.isDownloaded(context) -> "Load local AI"
                         else -> "Download & activate local AI"
                     })
