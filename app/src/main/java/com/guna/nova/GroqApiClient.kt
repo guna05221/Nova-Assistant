@@ -113,6 +113,8 @@ object GroqApiClient {
                 .put("max_completion_tokens", MAX_OUTPUT_TOKENS)
                 .put("stream", false)
 
+            // Count every outbound attempt, including errors and rate-limited responses.
+            prefs.edit().putInt("requests", prefs.getInt("requests", 0) + 1).apply()
             val connection = (URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15_000
@@ -141,7 +143,6 @@ object GroqApiClient {
                 if (answer.isBlank()) return Result(error = "Groq returned an empty answer. Please try again.")
                 val used = root.optJSONObject("usage")?.optInt("total_tokens", 0) ?: 0
                 prefs.edit()
-                    .putInt("requests", prefs.getInt("requests", 0) + 1)
                     .putInt("tokens", (prefs.getInt("tokens", 0) + used).coerceAtMost(MAX_LOCAL_TOKENS_PER_DAY))
                     .apply()
                 return Result(answer = answer)
