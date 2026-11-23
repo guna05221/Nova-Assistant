@@ -29,6 +29,9 @@ fun NovaBrainScreen(
     geminiConnected: Boolean,
     groqConnected: Boolean,
     localReady: Boolean,
+    connectionStatus: String,
+    onConnectChatGpt: () -> Unit,
+    onDisconnectChatGpt: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val pulse = rememberInfiniteTransition(label = "brain-pulse")
@@ -80,8 +83,15 @@ fun NovaBrainScreen(
             status = if (chatGptConnected) "Connected" else "Not connected",
             primary = true
         )
+        Button(
+            onClick = if (chatGptConnected) onDisconnectChatGpt else onConnectChatGpt,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Text(if (chatGptConnected) "Disconnect ChatGPT" else "Connect ChatGPT")
+        }
         Text(
-            "ChatGPT account authorization is not configured in this build yet. Nova will only show Connected after the official sign-in, plan permission and a real Responses API test succeed.",
+            connectionStatus,
             color = BrainMuted,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.fillMaxWidth()
