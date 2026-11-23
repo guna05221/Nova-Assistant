@@ -136,220 +136,141 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                             .statusBarsPadding()
-                            .padding(horizontal = 20.dp, vertical = 18.dp),
-                        verticalArrangement = Arrangement.spacedBy(18.dp)
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "NOVA",
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Text("Tamil • English • Tanglish voice assistant", color = NovaMuted)
+                        // Compact app bar stays visible while the content below scrolls.
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("NOVA", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                                Text("Your personal assistant", color = NovaMuted, style = MaterialTheme.typography.labelSmall)
                             }
                             Surface(color = Color(0xFF202A46), shape = CircleShape) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        Modifier.size(8.dp).background(
-                                            if (running) NovaMint else Color(0xFF8791A8),
-                                            CircleShape
-                                        )
-                                    )
-                                    Spacer(Modifier.width(7.dp))
-                                    Text(
-                                        if (running) "ACTIVE" else "IDLE",
-                                        color = Color.White,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(7.dp).background(if (running) NovaMint else Color(0xFF8791A8), CircleShape))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (running) "ACTIVE" else "READY", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                                 }
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            IconButton(onClick = {
+                                if (!Settings.canDrawOverlays(this@MainActivity)) {
+                                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                                } else {
+                                    startService(Intent(this@MainActivity, NovaOverlayService::class.java).apply { action = NovaOverlayService.ACTION_SHOW })
+                                }
+                            }) {
+                                Icon(Icons.Default.GraphicEq, contentDescription = "Open floating chat", tint = NovaMint)
                             }
                         }
 
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF202B48)),
-                            shape = RoundedCornerShape(22.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier.size(46.dp).background(Color(0xFF34436A), CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.GraphicEq, contentDescription = null, tint = NovaMint)
-                                }
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("LIVE CONVERSATION", color = Color.White, fontWeight = FontWeight.Bold)
-                                    Spacer(Modifier.height(3.dp))
-                                    Text(
-                                        "Keep Nova's chat bubble visible while you use other apps.",
-                                        color = NovaMuted,
-                                        style = MaterialTheme.typography.bodySmall
-                                    )
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Button(
-                                    onClick = {
-                                        if (!Settings.canDrawOverlays(this@MainActivity)) {
-                                            startActivity(
-                                                Intent(
-                                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                                    Uri.parse("package:$packageName")
-                                                )
-                                            )
-                                        } else {
-                                            startService(Intent(this@MainActivity, NovaOverlayService::class.java).apply {
-                                                action = NovaOverlayService.ACTION_SHOW
-                                            })
-                                        }
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 13.dp, vertical = 10.dp),
-                                    shape = RoundedCornerShape(14.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = NovaMint,
-                                        contentColor = Color(0xFF0B1824)
-                                    )
-                                ) {
-                                    Text("Open chat", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = NovaPanel),
-                            shape = RoundedCornerShape(28.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth().padding(20.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(112.dp)
-                                        .background(
-                                            Brush.radialGradient(
-                                                listOf(Color(0xFF6457C8), Color(0xFF29345C), NovaPanel)
-                                            ),
-                                            CircleShape
-                                        ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        if (running) Icons.Default.GraphicEq else Icons.Default.Mic,
-                                        contentDescription = "Microphone",
-                                        tint = NovaMint,
-                                        modifier = Modifier.size(48.dp)
-                                    )
-                                }
-                                Spacer(Modifier.height(14.dp))
-                                Text(
-                                    if (running) "Nova is listening" else "Ready to help",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    friendlyStatus(status),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = NovaMuted
-                                )
-                                Spacer(Modifier.height(18.dp))
-                                OutlinedButton(
-                                    onClick = {
-                                        if (!running) {
-                                            try {
-                                                ContextCompat.startForegroundService(
-                                                    this@MainActivity,
-                                                    Intent(this@MainActivity, WakeWordService::class.java).apply {
-                                                        action = WakeWordService.ACTION_ENROLL
-                                                    }
-                                                )
-                                            } catch (e: Exception) {
-                                                getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
-                                                    .putBoolean("running", false)
-                                                    .putString("status", "Voice setup failed: ${e.message}").apply()
-                                            }
-                                        }
-                                    },
-                                    enabled = !running,
-                                    modifier = Modifier.fillMaxWidth().height(50.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = NovaMint)
-                                ) {
-                                    Text("Set up my voice", fontWeight = FontWeight.Bold)
-                                }
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    "Speaker profile setup: speak naturally for 8 seconds. This profile is stored separately from speech recognition.",
-                                    color = NovaMuted,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Spacer(Modifier.height(12.dp))
-                                Button(
-                                    onClick = {
-                                        if (!running) {
-                                            try {
-                                                ContextCompat.startForegroundService(
-                                                    this@MainActivity,
-                                                    Intent(this@MainActivity, WakeWordService::class.java)
-                                                )
-                                            } catch (e: Exception) {
-                                                getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
-                                                    .putBoolean("running", false)
-                                                    .putString(
-                                                        "status",
-                                                        "Service start failed: ${e.javaClass.simpleName}: ${e.message}"
-                                                    ).apply()
-                                            }
-                                        } else {
-                                            getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
-                                                .putBoolean("running", false).putString("status", "Listening stopped.").apply()
-                                            stopService(Intent(this@MainActivity, WakeWordService::class.java).apply {
-                                                action = WakeWordService.ACTION_STOP
-                                            })
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                                    shape = RoundedCornerShape(18.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (running) Color(0xFF3B4663) else NovaPurple,
-                                        contentColor = if (running) Color.White else Color(0xFF17132D)
-                                    )
-                                ) {
-                                    Icon(if (running) Icons.Default.GraphicEq else Icons.Default.Mic, null)
-                                    Spacer(Modifier.width(9.dp))
-                                    Text(
-                                        if (running) "Stop listening" else "Start listening",
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    "Speech recognition supports Tamil and English language switching where your phone provider has the models. Tanglish support can vary.",
-                                    color = NovaMuted,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-
+                        // Only the middle content scrolls. Header and chat composer remain in place.
                         Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(18.dp)
+                            modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            Text("How can I help?", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                            Text("Ask naturally. Nova can chat, research and help with tasks.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+
+                            researchReport?.let { report ->
+                                Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Text("LATEST RESEARCH", color = NovaMint, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                                        Text(report.query, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                                        Text(report.text, color = Color(0xFFE0E5F2), style = MaterialTheme.typography.bodyMedium)
+                                        report.sources.forEachIndexed { index, source ->
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(source.title, color = NovaMuted, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                                                TextButton(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) } }) { Text("Open", color = NovaMint) }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text("VOICE", color = NovaMuted, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(if (running) "Voice listening is active" else "Voice listening is off", color = Color.White, fontWeight = FontWeight.SemiBold)
+                                    Text(friendlyStatus(status), color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                if (!running) {
+                                                    try {
+                                                        ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, WakeWordService::class.java).apply { action = WakeWordService.ACTION_ENROLL })
+                                                    } catch (e: Exception) {
+                                                        getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit().putBoolean("running", false).putString("status", "Voice setup failed: ${e.message}").apply()
+                                                    }
+                                                }
+                                            },
+                                            enabled = !running,
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(13.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = NovaMint)
+                                        ) { Text("Set up voice") }
+                                        Button(
+                                            onClick = {
+                                                if (!running) {
+                                                    try { ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, WakeWordService::class.java)) }
+                                                    catch (e: Exception) { getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit().putBoolean("running", false).putString("status", "Service start failed: ${e.message}").apply() }
+                                                } else {
+                                                    getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit().putBoolean("running", false).putString("status", "Listening stopped.").apply()
+                                                    stopService(Intent(this@MainActivity, WakeWordService::class.java).apply { action = WakeWordService.ACTION_STOP })
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(13.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = if (running) Color(0xFF3B4663) else NovaPurple, contentColor = if (running) Color.White else Color(0xFF17132D))
+                                        ) { Text(if (running) "Stop listening" else "Start listening") }
+                                    }
+                                }
+                            }
+
+                            Text("EXPLORE NOVA", color = NovaMuted, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            FeatureCard(
+                                icon = { Icon(Icons.Default.Smartphone, null, tint = NovaMint) },
+                                title = "Control your phone",
+                                description = "Open apps, navigate screens and perform supported actions."
+                            )
+                            FeatureCard(
+                                icon = { Icon(Icons.Default.Search, null, tint = NovaMint) },
+                                title = "Research online",
+                                description = "Compare options, examine sources and prepare recommendations."
+                            )
+                            FeatureCard(
+                                icon = { Icon(Icons.Default.EditNote, null, tint = NovaMint) },
+                                title = "Write and plan",
+                                description = "Draft messages, organise ideas and plan your next steps."
+                            )
+
+                            Text("LOCAL AI", color = NovaMuted, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Qwen3.5 4B · Q4_K_M", color = Color.White, fontWeight = FontWeight.SemiBold)
+                                    Text("Runs on this phone after downloading the model.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
+                                    Text(localAi.status, color = NovaMint, style = MaterialTheme.typography.bodySmall)
+                                    if (localAi.downloading || localAi.progress > 0f) LinearProgressIndicator(progress = localAi.progress, modifier = Modifier.fillMaxWidth(), color = NovaMint)
+                                    Button(onClick = { LocalAiManager.downloadAndLoad(this@MainActivity) }, enabled = !localAi.downloading && !localAi.ready, modifier = Modifier.fillMaxWidth()) {
+                                        Text(when { localAi.ready -> "Local AI ready"; localAi.downloading -> "Downloading / loading…"; LocalAiManager.isDownloaded(this@MainActivity) -> "Load local AI"; else -> "Download & activate local AI" })
+                                    }
+                                }
+                            }
+                            AIProviderSettingsCard()
+                            Text("ADVANCED SETTINGS", color = NovaMuted, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = NovaPurple)) {
+                                Icon(Icons.Default.AccessibilityNew, null); Spacer(Modifier.width(8.dp)); Text("Accessibility settings")
+                            }
+                            OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = Uri.parse("package:$packageName") }) }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = NovaMuted)) {
+                                Icon(Icons.Default.Settings, null); Spacer(Modifier.width(8.dp)); Text("Nova app settings")
+                            }
+                            Spacer(Modifier.height(8.dp))
+                        }
+
+                        // The composer is pinned to the bottom; only the conversation history scrolls inside it.
                         NovaChatPanel(
                             messages = chatMessages,
                             input = chatInput,
@@ -357,143 +278,6 @@ class MainActivity : ComponentActivity() {
                             onSend = { sendChatMessage() },
                             onVoice = { startVoiceChat() }
                         )
-                        Text(
-                            "WHAT CAN NOVA DO?",
-                            color = NovaMuted,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        FeatureCard(
-                            icon = { Icon(Icons.Default.Smartphone, null, tint = NovaMint) },
-                            title = "Control your phone",
-                            description = "Try: “Open Settings”, “Go home”, “Go back”, “Scroll down”."
-                        )
-                        FeatureCard(
-                            icon = { Icon(Icons.Default.Search, null, tint = NovaMint) },
-                            title = "Search the internet",
-                            description = "Try: “Search online for Java developer jobs”."
-                        )
-                        researchReport?.let { report ->
-                            Card(colors = CardDefaults.cardColors(containerColor = NovaPanel.copy(alpha = 0.98f)), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text("NOVA RESEARCH REPORT", color = NovaMint, fontWeight = FontWeight.Bold)
-                                    Text(report.query, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                    Text(report.text, color = Color(0xFFE0E5F2), style = MaterialTheme.typography.bodyMedium)
-                                    if (report.sources.isNotEmpty()) {
-                                        Text("RESEARCH SOURCES", color = NovaMint, fontWeight = FontWeight.Bold)
-                                        report.sources.forEachIndexed { index, source ->
-                                            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF222D49)), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                                                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Text(source.title, color = Color.White, fontWeight = FontWeight.SemiBold)
-                                                    Text("Source " + (index + 1) + " · Open original page", color = NovaMuted, style = MaterialTheme.typography.labelSmall)
-                                                    Button(onClick = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url))) } }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = NovaMint, contentColor = Color(0xFF101A2A))) {
-                                                        Text("Open source")
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        Text("No direct source links were returned. Treat unlinked claims as unverified.", color = NovaMuted, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                }
-                            }
-                        }
-                        FeatureCard(
-                            icon = { Icon(Icons.Default.EditNote, null, tint = NovaMint) },
-                            title = "Write or draft content",
-                            description = "Try: “Write a birthday message” or “Draft an email”."
-                        )
-
-                        Text(
-                            "LOCAL AI BRAIN",
-                            color = NovaMuted,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = NovaPanel.copy(alpha = 0.96f)),
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(9.dp)
-                            ) {
-                                Text("Qwen3.5 4B · Q4_K_M", color = Color.White, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    "About 3.03 GB download. Runs on this phone using its CPU; no AI API key or cloud inference.",
-                                    color = NovaMuted,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                Text(localAi.status, color = NovaMint, style = MaterialTheme.typography.bodySmall)
-                                if (localAi.downloading || localAi.progress > 0f) {
-                                    LinearProgressIndicator(
-                                        progress = localAi.progress,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        color = NovaMint
-                                    )
-                                }
-                                Button(
-                                    onClick = { LocalAiManager.downloadAndLoad(this@MainActivity) },
-                                    enabled = !localAi.downloading && !localAi.ready,
-                                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                                    shape = RoundedCornerShape(15.dp)
-                                ) {
-                                    Text(
-                                        when {
-                                            localAi.ready -> "Local AI ready"
-                                            localAi.downloading -> "Downloading / loading…"
-                                            LocalAiManager.isDownloaded(this@MainActivity) -> "Load local AI"
-                                            else -> "Download & activate local AI"
-                                        },
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Text(
-                                    "Keep at least 4 GB of free storage. On 8 GB RAM, close other heavy apps before loading the model. First setup needs Wi-Fi; later inference is offline.",
-                                    color = NovaMuted,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-
-                        AIProviderSettingsCard()
-
-                        Text(
-                            "SETUP & HELP",
-                            color = NovaMuted,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        OutlinedButton(
-                            onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = NovaPurple)
-                        ) {
-                            Icon(Icons.Default.AccessibilityNew, null)
-                            Spacer(Modifier.width(9.dp))
-                            Text("Accessibility settings")
-                        }
-                        OutlinedButton(
-                            onClick = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = android.net.Uri.parse("package:$packageName")
-                            }) },
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = NovaMuted)
-                        ) {
-                            Icon(Icons.Default.Settings, null)
-                            Spacer(Modifier.width(9.dp))
-                            Text("Nova app settings")
-                        }
-                        Text(
-                            "Nova listens continuously after you start it. Long-press Volume Up to start listening from anywhere.",
-                            color = NovaMuted,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        }
                     }
                 }
             }
