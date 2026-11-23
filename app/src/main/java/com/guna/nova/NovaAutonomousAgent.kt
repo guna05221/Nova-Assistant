@@ -194,7 +194,7 @@ object NovaAutonomousAgent {
 
     private fun extractOpenTarget(request: String): String? {
         val match = Regex(
-            """\\b(?:open|launch)\\s+([A-Za-z0-9][A-Za-z0-9 ._-]*?)(?=\\s+(?:then|and then|after that)|[,;.!?]|$)""",
+            """\b(?:open|launch)\s+([A-Za-z0-9][A-Za-z0-9 ._-]*?)(?=\s+(?:then|and then|after that)|[,;.!?]|$)""",
             RegexOption.IGNORE_CASE
         ).find(request) ?: return null
         return match.groupValues[1].trim().trimEnd('.', ',', ';', '!', '?').takeIf { it.isNotBlank() }
@@ -202,7 +202,7 @@ object NovaAutonomousAgent {
 
     private fun extractSearchQuery(request: String): String? {
         val match = Regex(
-            """\\b(?:search|look\\s+for|find)\\s+(?:for\\s+)?(.+?)(?=\\s+(?:and then|then|after that)|[,;.!?]|$)""",
+            """\b(?:search|look\s+for|find)\s+(?:for\s+)?(.+?)(?=\s+(?:and then|then|after that)|[,;.!?]|$)""",
             RegexOption.IGNORE_CASE
         ).find(request) ?: return null
         return match.groupValues[1].trim().trimEnd('.', ',', ';', '!', '?').takeIf { it.isNotBlank() }
