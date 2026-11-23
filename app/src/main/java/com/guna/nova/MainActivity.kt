@@ -445,35 +445,6 @@ private fun friendlyStatus(raw: String): String {
 }
 
 @Composable
-private fun ResearchLibraryScreen(report: NovaResearchStore.Report?, onOpen: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Research", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Recommendations and evidence Nova has gathered.", color = NovaMuted)
-        if (report == null) EmptyLibraryCard("No research reports yet", "Ask Nova to research a product, course, restaurant or anything you want to compare.")
-        else Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(22.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("LATEST REPORT", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                Text(report.query, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Saved " + SimpleDateFormat("dd MMM yyyy · hh:mm a", Locale.getDefault()).format(Date(report.savedAt)), color = NovaMuted, style = MaterialTheme.typography.labelSmall)
-                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-                Text(report.text, color = Color(0xFFE7EAF3), style = MaterialTheme.typography.bodyMedium)
-                if (report.sources.isNotEmpty()) {
-                    Text("SOURCES", color = NovaMint, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    report.sources.forEach { source ->
-                        Card(colors = CardDefaults.cardColors(containerColor = NovaPanel), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(source.title, color = Color.White, modifier = Modifier.weight(1f), maxLines = 3)
-                                TextButton(onClick = { onOpen(source.url) }) { Text("Open", color = NovaMint) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun MemoryLibraryScreen(
     reminders: List<NovaWorkspaceStore.Reminder>,
     instructions: List<NovaWorkspaceStore.Instruction>,
