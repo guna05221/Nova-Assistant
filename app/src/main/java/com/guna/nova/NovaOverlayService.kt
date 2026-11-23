@@ -33,6 +33,7 @@ class NovaOverlayService : Service() {
         const val ACTION_ASSISTANT = "com.guna.nova.overlay.ASSISTANT"
         const val ACTION_STATUS = "com.guna.nova.overlay.STATUS"
         const val EXTRA_TEXT = "text"
+        @Volatile var chatScreenVisible: Boolean = false
 
         fun show(context: android.content.Context) = send(context, ACTION_SHOW)
         fun hide(context: android.content.Context) = send(context, ACTION_HIDE)
@@ -84,6 +85,7 @@ class NovaOverlayService : Service() {
     }
 
     private fun showChip() {
+        if (chatScreenVisible) { removeChip(); return }
         if (!Settings.canDrawOverlays(this) || chip != null) return
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()
@@ -202,6 +204,7 @@ class NovaOverlayService : Service() {
     }
 
     private fun openFullChat() {
+        removeChip()
         val launch = packageManager.getLaunchIntentForPackage(packageName) ?: return
         launch.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
