@@ -75,6 +75,9 @@ object NovaCommand {
             statusOnly(appContext, "Researching online…")
             scope.launch {
                 val result = AIProviderManager.research(appContext, original)
+                // A slow research response must never appear after the user has moved
+                // on to a newer message or phone action.
+                if (requestSequence.get() != requestId) return@launch
                 if (result.ok) {
                     NovaResearchStore.save(
                         appContext, original, result.report,
@@ -85,6 +88,7 @@ object NovaCommand {
                     }
                 } else {
                     withContext(Dispatchers.Main) {
+                        if (requestSequence.get() != requestId) return@withContext
                         val rateLimited = result.error.contains("429") || result.error.contains("quota", ignoreCase = true) ||
                             result.error.contains("too many requests", ignoreCase = true)
                         if (rateLimited && openResearchFallback(appContext, original)) {
