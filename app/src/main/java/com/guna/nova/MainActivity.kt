@@ -197,6 +197,12 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(horizontal = 10.dp)
                             )
                             NavigationDrawerItem(
+                                label = { Text("Brain") }, selected = selectedTab == 4,
+                                icon = { Text("✳", color = NovaPurple) },
+                                onClick = { selectedTab = 4; scope.launch { drawerState.close() } },
+                                modifier = Modifier.padding(horizontal = 10.dp)
+                            )
+                            NavigationDrawerItem(
                                 label = { Text("Research") }, selected = selectedTab == 1,
                                 icon = { Icon(Icons.Default.Search, null) },
                                 onClick = { selectedTab = 1; scope.launch { drawerState.close() } },
@@ -216,9 +222,9 @@ class MainActivity : ComponentActivity() {
                             )
                             Spacer(Modifier.weight(1f))
                             NavigationDrawerItem(
-                                label = { Text("Settings") }, selected = selectedTab == 4,
+                                label = { Text("Settings") }, selected = selectedTab == 5,
                                 icon = { Icon(Icons.Default.Settings, null) },
-                                onClick = { selectedTab = 4; scope.launch { drawerState.close() } },
+                                onClick = { selectedTab = 5; scope.launch { drawerState.close() } },
                                 modifier = Modifier.padding(horizontal = 10.dp)
                             )
                             Text("Nova · Hybrid AI", color = NovaMuted, style = MaterialTheme.typography.labelSmall,
@@ -244,7 +250,8 @@ class MainActivity : ComponentActivity() {
                                             1 -> "Research library"
                                             2 -> "Memory & plans"
                                             3 -> "Recent activity"
-                                            4 -> "Preferences and controls"
+                                            4 -> "Nova Brain · Intelligence engine"
+                                            5 -> "Preferences and controls"
                                             else -> "Hybrid AI assistant"
                                         },
                                         color = NovaMuted, style = MaterialTheme.typography.labelSmall
@@ -302,6 +309,13 @@ class MainActivity : ComponentActivity() {
                                         chatMessages.add(NovaChatLine("YOU", prompt))
                                         NovaCommand.execute(this@MainActivity, prompt)
                                     },
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                4 -> NovaBrainScreen(
+                                    chatGptConnected = false,
+                                    geminiConnected = AIProviderManager.hasGemini(this@MainActivity),
+                                    groqConnected = AIProviderManager.hasGroq(this@MainActivity),
+                                    localReady = LocalAiManager.isDownloaded(this@MainActivity),
                                     modifier = Modifier.fillMaxSize()
                                 )
                                 1 -> Column(
