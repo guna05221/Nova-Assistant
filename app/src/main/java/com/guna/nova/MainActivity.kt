@@ -343,6 +343,32 @@ class MainActivity : ComponentActivity() {
                             Text("Accessibility settings")
                         }
                         OutlinedButton(
+                            onClick = {
+                                if (!Settings.canDrawOverlays(this@MainActivity)) {
+                                    startActivity(
+                                        Intent(
+                                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                            android.net.Uri.parse("package:$packageName")
+                                        )
+                                    )
+                                } else {
+                                    NovaOverlayService.show(this@MainActivity)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = NovaMint)
+                        ) {
+                            Icon(Icons.Default.GraphicEq, null)
+                            Spacer(Modifier.width(9.dp))
+                            Text(if (Settings.canDrawOverlays(this@MainActivity)) "Show floating Nova" else "Enable floating Nova")
+                        }
+                        Text(
+                            "Message approvals appear inside Nova's floating card. Nova never uses a separate approval notification.",
+                            color = NovaMuted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        OutlinedButton(
                             onClick = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                                 data = android.net.Uri.parse("package:$packageName")
                             }) },
