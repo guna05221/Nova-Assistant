@@ -240,7 +240,7 @@ class MainActivity : ComponentActivity() {
                                             2 -> "Memory & plans"
                                             3 -> "Recent activity"
                                             5 -> "Preferences and controls"
-                                            else -> "Phone controls"
+                                            else -> "AI voice assistant"
                                         },
                                         color = NovaMuted, style = MaterialTheme.typography.labelSmall
                                     )
@@ -297,6 +297,7 @@ class MainActivity : ComponentActivity() {
                                     onStopSpeaking = { NovaSpeech.stop() },
                                     onSuggestion = { prompt ->
                                         chatMessages.add(NovaChatLine("YOU", prompt))
+                                        isThinking = true
                                         NovaCommand.execute(this@MainActivity, prompt)
                                     },
                                     modifier = Modifier.fillMaxSize()
