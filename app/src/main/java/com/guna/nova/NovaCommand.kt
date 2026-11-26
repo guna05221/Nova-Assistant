@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -11,6 +12,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
 import java.util.Locale
+import java.security.MessageDigest
+import java.util.UUID
 
 /**
  * Local-first intent router. Unknown speech is never silently treated as a web search.
@@ -21,6 +24,19 @@ object NovaCommand {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val requestSequence = AtomicLong(0L)
 
+    // Pending approvals are process-memory only: never persisted, replayed or restored.
+    private data class PendingSend(
+        val id: String,
+        val packageName: String,
+        val recipient: String,
+        val expectedMessage: String,
+        val digest: String,
+        val expiresAtElapsed: Long
+    )
+    @Volatile private var pendingSend: PendingSend? = null
+    private val pendingSendLock = Any()
+    private const val SEND_CONFIRMATION_WINDOW_MS = 20_000L
+
     fun execute(context: Context, raw: String) {
         val appContext = context.applicationContext
         val original = raw.trim()
@@ -29,18 +45,39 @@ object NovaCommand {
 
         val requestId = requestSequence.incrementAndGet()
 
-        // Permanent financial-action denial runs before intent interpretation or any model.
+        // A financial request always cancels any outstanding message approval first.
         if (FinancialActionPolicy.mustDeny(requestOrArguments = command)) {
+            invalidatePendingSend(appContext, "Financial requests cannot be approved.")
             say(appContext, "I can explain financial topics, but Nova permanently blocks payments, transfers, purchases, paid orders, recharges and subscriptions.")
             return
+        }
+
+        val pending = synchronized(pendingSendLock) { pendingSend }
+        if (pending != null) {
+            when {
+                isCancellation(command) -> {
+                    resolvePendingSend(appContext, pending.id, false)
+                    return
+                }
+                isConfirmation(command) -> {
+                    // Spoken "yes" is not a substitute for the visible one-time Allow control.
+                    say(appContext, "For safety, tap Allow in Nova's floating approval card. Nothing has been sent yet.")
+                    return
+                }
+                else -> invalidatePendingSend(appContext, "A new command cancelled the pending approval.")
+            }
         }
 
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val directIntent = understand(command, prefs.getString("last_app", null))
 
-        // These actions require explicit user wording and are never inferred by an AI model.
-        if (directIntent.kind == "TYPE_TEXT" || directIntent.kind == "SEND") {
+        // Typing never sends. A SEND request only creates a visible approval card.
+        if (directIntent.kind == "TYPE_TEXT") {
             executeIntent(appContext, directIntent)
+            return
+        }
+        if (directIntent.kind == "SEND") {
+            requestMessageApproval(appContext)
             return
         }
         if (isCapabilityQuestion(command)) {
@@ -295,8 +332,9 @@ object NovaCommand {
                 say(context, if (typed) "Text entered. Say send it when you want me to send it." else "I couldn't find a focused text box. Open the app and tap its message field first.")
             }
             "SEND" -> {
-                val sent = NovaAccessibilityService.instance?.clickSendButton() == true
-                say(context, if (sent) "I tapped the visible Send button. Check that the app shows your message as sent." else "I couldn't find an enabled, clearly labelled Send button. I haven't sent anything.")
+                // Sending is intentionally impossible through this generic executor path.
+                // Only resolvePendingSend() can invoke the snapshot-checked send operation.
+                say(context, "To send, review the exact recipient and message in Nova's floating card and tap Allow.")
             }
             "HOME" -> {
                 val accessibility = NovaAccessibilityService.instance
@@ -343,6 +381,135 @@ object NovaCommand {
             "CONVERSATION" -> say(context, intent.value ?: "I'm listening. Tell me what you'd like me to do.")
             else -> say(context, "I couldn't understand that request. Please say it another way.")
         }
+    }
+
+    private fun requestMessageApproval(context: Context) {
+        if (!Settings.canDrawOverlays(context)) {
+            say(context, "Message approval needs Nova's floating window permission. Open Nova, enable Display over other apps, then try again. Nothing was sent.")
+            return
+        }
+        val accessibility = NovaAccessibilityService.instance
+        if (accessibility == null) {
+            say(context, "I can't verify the current app. Enable Nova Accessibility and try again. Nothing was sent.")
+            return
+        }
+        val snapshot = accessibility.currentSendContext()
+        if (snapshot == null) {
+            say(context, "I couldn't verify one recipient and the exact message in the current app. Nothing was sent.")
+            return
+        }
+
+        val id = UUID.randomUUID().toString()
+        val digest = sendSnapshotDigest(snapshot)
+        val expiresAt = SystemClock.elapsedRealtime() + SEND_CONFIRMATION_WINDOW_MS
+        val pending = PendingSend(
+            id = id,
+            packageName = snapshot.packageName,
+            recipient = snapshot.recipient,
+            expectedMessage = snapshot.message,
+            digest = digest,
+            expiresAtElapsed = expiresAt
+        )
+        synchronized(pendingSendLock) { pendingSend = pending }
+
+        val started = NovaOverlayService.requestApproval(
+            context = context,
+            approvalId = id,
+            packageName = snapshot.packageName,
+            recipient = snapshot.recipient,
+            message = snapshot.message,
+            expiresAtElapsed = expiresAt
+        )
+        if (!started) {
+            synchronized(pendingSendLock) { if (pendingSend?.id == id) pendingSend = null }
+            say(context, "I couldn't open Nova's floating approval card. Nothing was sent.")
+            return
+        }
+        say(context, "Review the recipient and exact message in Nova's floating card. Tap Allow to send once, or Deny to cancel.")
+    }
+
+    /** SHA-256 binds approval to the exact foreground package, recipient label and message. */
+    fun sendSnapshotDigest(snapshot: VerifiedSendContext): String {
+        val canonical = snapshot.packageName + "\u0000" + snapshot.recipient + "\u0000" + snapshot.message
+        val bytes = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    fun resolvePendingSend(context: Context, approvalId: String, allow: Boolean) {
+        val approved = synchronized(pendingSendLock) {
+            val current = pendingSend
+            if (current?.id != approvalId) return
+            pendingSend = null // consume atomically before any side effect
+            current
+        }
+        NovaOverlayService.clearApproval(context, approvalId)
+        if (!allow) {
+            say(context, "Denied. Nothing was sent.")
+            return
+        }
+        if (SystemClock.elapsedRealtime() >= approved.expiresAtElapsed) {
+            say(context, "That approval expired. Nothing was sent.")
+            return
+        }
+        val sent = NovaAccessibilityService.instance?.clickSendButton(
+            expectedPackage = approved.packageName,
+            expectedRecipient = approved.recipient,
+            expectedMessage = approved.expectedMessage,
+            expectedDigest = approved.digest
+        ) == true
+        say(
+            context,
+            if (sent) "I tapped Send for the approved message. Please check the app to verify delivery."
+            else "I did not send it because the app, recipient or message could not be re-verified. Please review it and ask again."
+        )
+    }
+
+    fun expirePendingSend(context: Context, approvalId: String) {
+        val expired = synchronized(pendingSendLock) {
+            if (pendingSend?.id != approvalId) return
+            pendingSend = null
+            true
+        }
+        if (expired) {
+            NovaOverlayService.clearApproval(context, approvalId)
+            say(context, "The message approval expired. Nothing was sent.")
+        }
+    }
+
+    fun invalidatePendingSend(context: Context, reason: String = "Approval cancelled.") {
+        val cancelled = synchronized(pendingSendLock) {
+            val current = pendingSend ?: return
+            pendingSend = null
+            current
+        }
+        NovaOverlayService.clearApproval(context, cancelled.id)
+        say(context, "$reason Nothing was sent.")
+    }
+
+    fun invalidatePendingSendForPackage(context: Context, changedPackage: String) {
+        val current = synchronized(pendingSendLock) { pendingSend } ?: return
+        if (current.packageName == changedPackage) {
+            invalidatePendingSend(context, "The message changed, so I cancelled its approval.")
+        }
+    }
+
+    fun invalidatePendingSendIfChanged(context: Context, current: VerifiedSendContext?) {
+        val pending = synchronized(pendingSendLock) { pendingSend } ?: return
+        val matches = current != null &&
+            current.packageName == pending.packageName &&
+            current.recipient == pending.recipient &&
+            current.message == pending.expectedMessage &&
+            sendSnapshotDigest(current) == pending.digest
+        if (!matches) invalidatePendingSend(context, "The app, recipient or message changed, so I cancelled its approval.")
+    }
+
+    fun onApprovalSurfaceUnavailable(context: Context, approvalId: String) {
+        val removed = synchronized(pendingSendLock) {
+            if (pendingSend?.id != approvalId) return
+            pendingSend = null
+            true
+        }
+        if (removed) say(context, "Nova couldn't display the floating approval card. Nothing was sent.")
     }
 
     private data class BrainIntent(val kind: String, val value: String? = null)
