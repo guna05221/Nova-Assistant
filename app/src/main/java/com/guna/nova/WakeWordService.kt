@@ -127,7 +127,7 @@ class WakeWordService : Service() {
             recognizer?.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) { recognitionActive = true; report("Listening for Tamil, English and Tanglish. Speak naturally.") }
                 override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onRmsChanged(rmsdB: Float) {\n                    NovaOverlayService.audioLevel(this@WakeWordService, rmsdB)\n                }
                 override fun onBufferReceived(buffer: ByteArray?) {}
                 override fun onEndOfSpeech() {}
                 override fun onPartialResults(partialResults: Bundle?) {
