@@ -180,7 +180,7 @@ object AIProviderManager {
                     JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
                     .put("contents", contents)
                     .put("generationConfig", JSONObject().put("temperature", 0.85).put("maxOutputTokens", 500))
-                val response = request(
+                val response = request(context,
                     "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent",
                     "x-goog-api-key", geminiKey, body.toString())
                 if (response.first in 200..299) {
