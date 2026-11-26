@@ -21,14 +21,18 @@ object AIProviderManager {
     private const val PREFS = "nova_ai_secure"
     private const val GEMINI = "gemini"
     private const val GROQ = "groq"
+    private const val CLOUD_CONSENT = "cloud_ai_explicit_consent"
     private const val KEY_ALIAS = "nova_ai_credentials_v1"
     private const val GEMINI_MODEL = "gemini-3.5-flash-lite"
     private const val GROQ_MODEL = "openai/gpt-oss-20b"
 
     data class Result(val ok: Boolean, val message: String, val provider: String? = null)
 
+    fun isCloudEnabled(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(CLOUD_CONSENT, false)
+    fun setCloudEnabled(context: Context, enabled: Boolean) { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(CLOUD_CONSENT, enabled).commit() }
     fun hasGemini(context: Context) = get(context, GEMINI).isNotBlank()
     fun hasGroq(context: Context) = get(context, GROQ).isNotBlank()
+    fun hasEnabledCloudProvider(context: Context): Boolean = isCloudEnabled(context) && (hasGemini(context) || hasGroq(context))
 
     fun saveGemini(context: Context, value: String) = save(context, GEMINI, value.trim())
     fun saveGroq(context: Context, value: String) = save(context, GROQ, value.trim())
@@ -71,12 +75,13 @@ object AIProviderManager {
     }
 
     fun testGemini(context: Context): Result {
+        if (!isCloudEnabled(context)) return cloudDisabledResult()
         val key = get(context, GEMINI)
         if (key.isBlank()) return Result(false, "Add your Gemini API key first.")
         return try {
             val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts",
                 JSONArray().put(JSONObject().put("text", "Reply with exactly: Gemini connection successful")))))
-            val response = request(
+            val response = request(context,
                 "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent",
                 "x-goog-api-key", key, body.toString()
             )
@@ -93,11 +98,12 @@ object AIProviderManager {
     }
 
     fun testGroq(context: Context): Result {
+        if (!isCloudEnabled(context)) return cloudDisabledResult()
         val key = get(context, GROQ)
         if (key.isBlank()) return Result(false, "Add your Groq API key first.")
         return try {
             val body = chatBody("Reply with exactly: Groq connection successful")
-            val response = request("https://api.groq.com/openai/v1/chat/completions", "Authorization", "Bearer $key", body.toString())
+            val response = request(context, "https://api.groq.com/openai/v1/chat/completions", "Authorization", "Bearer $key", body.toString())
             if (response.first in 200..299) Result(true, "Groq connected successfully.", "Groq")
             else Result(false, "Groq returned HTTP ${response.first}: ${providerError(response.second)}")
         } catch (e: Exception) { Result(false, "Groq test failed: ${e.message ?: "network error"}") }
@@ -105,13 +111,14 @@ object AIProviderManager {
 
     /** Gemini primary, Groq fallback. Returns null if neither provider is configured/available. */
     fun plan(context: Context, systemPrompt: String, userText: String): Result {
+        if (!isCloudEnabled(context)) return cloudDisabledResult()
         val geminiKey = get(context, GEMINI)
         if (geminiKey.isNotBlank()) {
             try {
                 val parts = JSONArray().put(JSONObject().put("text", systemPrompt + "\nUser said: " + userText.take(1200) + "\nReturn one JSON action."))
                 val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", parts)))
                     .put("generationConfig", JSONObject().put("temperature", 0.1).put("maxOutputTokens", 220))
-                val response = request("https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent",
+                val response = request(context, "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent",
                     "x-goog-api-key", geminiKey, body.toString())
                 if (response.first in 200..299) {
                     val root = JSONObject(response.second)
@@ -129,7 +136,7 @@ object AIProviderManager {
                     .put("messages", JSONArray()
                         .put(JSONObject().put("role", "system").put("content", systemPrompt))
                         .put(JSONObject().put("role", "user").put("content", userText.take(1200) + "\nReturn one JSON action.")))
-                val response = request("https://api.groq.com/openai/v1/chat/completions",
+                val response = request(context, "https://api.groq.com/openai/v1/chat/completions",
                     "Authorization", "Bearer $groqKey", body.toString())
                 if (response.first in 200..299) {
                     val text = JSONObject(response.second).getJSONArray("choices").getJSONObject(0)
@@ -148,6 +155,7 @@ object AIProviderManager {
      * Gemini is primary; Groq is the automatic fallback.
      */
     fun chat(context: Context, history: JSONArray): Result {
+        if (!isCloudEnabled(context)) return cloudDisabledResult()
         val system = "You are Nova, a helpful Android voice assistant. Speak naturally and directly. " +
             "Understand English, Tamil and Tanglish. Answer questions, explain concepts, tell jokes, " +
             "and handle follow-ups using the conversation history. When the user asks for another joke, " +
@@ -196,7 +204,7 @@ object AIProviderManager {
                 }
                 val body = JSONObject().put("model", GROQ_MODEL).put("temperature", 0.85)
                     .put("max_tokens", 500).put("messages", messages)
-                val response = request("https://api.groq.com/openai/v1/chat/completions",
+                val response = request(context, "https://api.groq.com/openai/v1/chat/completions",
                     "Authorization", "Bearer $groqKey", body.toString())
                 if (response.first in 200..299) {
                     val answer = JSONObject(response.second).getJSONArray("choices").getJSONObject(0)
@@ -219,7 +227,10 @@ object AIProviderManager {
     private fun chatBody(text: String) = JSONObject().put("model", GROQ_MODEL)
         .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", text)))
 
-    private fun request(url: String, header: String, value: String, body: String): Pair<Int, String> {
+    private fun cloudDisabledResult() = Result(false, "Cloud AI is disabled. Enable it in Nova settings before sending provider requests.")
+
+    private fun request(context: Context, url: String, header: String, value: String, body: String): Pair<Int, String> {
+        if (!isCloudEnabled(context)) return 403 to "Cloud AI consent is disabled."
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"; connectTimeout = 15000; readTimeout = 25000
             doOutput = true
