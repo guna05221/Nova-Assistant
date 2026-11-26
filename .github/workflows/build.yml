@@ -3,14 +3,14 @@ name: Build Nova debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/voice-conversation-pipeline, feature/voice-screen-observation, feature/autonomous-agent-workflow]
+    branches: [main, fix/voice-conversation-pipeline, feature/voice-screen-observation, feature/autonomous-agent-workflow, feature/voice-reactive-popup]
     paths:
       - '**.gradle.kts'
       - 'gradle.properties'
       - 'app/**'
       - '.github/workflows/build.yml'
   pull_request:
-    branches: [main, feature/floating-live-conversation]
+    branches: [main, feature/floating-live-conversation, feature/autonomous-agent-workflow]
     paths:
       - '**.gradle.kts'
       - 'gradle.properties'
