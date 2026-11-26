@@ -49,7 +49,10 @@ internal object FinancialActionPolicy {
         Regex("""\b(?:send|transfer)\s+(?:the\s+)?(?:money|funds)\b"""),
         Regex("""\b(?:place|make)\s+(?:an?\s+)?order\b"""),
         Regex("""\b(?:order|buy|purchase)\s+(?:the\s+)?(?:food|biryani|groceries|product|item)\b"""),
-        Regex("""\b(?:renew|start)\s+(?:my\s+)?subscription\b""")
+        Regex("""\b(?:renew|start)\s+(?:my\s+)?subscription\b"""),
+        Regex("""\bpay\s+(?:(?:my|the|this)\s+)?(?:bill|rent|fee|invoice|electricity|water|mobile|phone|account)\b"""),
+        Regex("""\b(?:buy|purchase)\s+(?:(?:me|a|an|the|my|this|that)\s+)?[a-z][a-z0-9 -]{1,40}\b"""),
+        Regex("""\b(?:order)\s+(?:(?:me|a|an|the|my|this|that)\s+)?(?:food|meal|groceries|product|item|phone|laptop|ticket)\b""")
     )
 
     fun isProhibitedCapability(capability: String?): Boolean {
