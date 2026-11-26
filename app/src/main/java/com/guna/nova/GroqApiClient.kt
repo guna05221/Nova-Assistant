@@ -71,6 +71,8 @@ object GroqApiClient {
     private const val MODEL = "openai/gpt-oss-20b"
     private const val MAX_LOCAL_REQUESTS_PER_DAY = 900
     private const val MAX_LOCAL_TOKENS_PER_DAY = 180_000
+    private const val MAX_REQUESTS_PER_MINUTE = 20
+    private const val REQUEST_WINDOW_MS = 60_000L
     private const val MAX_OUTPUT_TOKENS = 350
     private val requestInFlight = AtomicBoolean(false)
 
@@ -93,10 +95,25 @@ object GroqApiClient {
                 return Result(error = "Nova's local free-quota safety limit has been reached for today. Phone commands still work; AI chat will be available again tomorrow.")
             }
 
+            // Stay comfortably below Groq's published free-tier request-per-minute ceiling.
+            val now = System.currentTimeMillis()
+            val recentRequests = try {
+                val saved = prefs.getString("request_times", null)
+                if (saved.isNullOrBlank()) JSONArray() else JSONArray(saved)
+            } catch (_: Exception) { JSONArray() }
+            val activeRequests = JSONArray()
+            for (i in 0 until recentRequests.length()) {
+                val timestamp = recentRequests.optLong(i, 0L)
+                if (timestamp > 0L && now - timestamp < REQUEST_WINDOW_MS) activeRequests.put(timestamp)
+            }
+            if (activeRequests.length() >= MAX_REQUESTS_PER_MINUTE) {
+                return Result(error = "Nova is protecting your free Groq limit. Please wait about a minute before asking another AI question.")
+            }
+
             val messages = JSONArray()
                 .put(JSONObject()
                     .put("role", "system")
-                    .put("content", "You are Nova, a helpful, natural voice assistant. Be conversational and concise by default. Answer the user's actual question directly. Do not claim to perform phone actions; Nova's Android command system handles those separately. If the user asks for detail, explain clearly."))
+                    .put("content", "You are Nova, a natural, helpful personal voice assistant. Respond in the language the user uses: English, Tamil, or Tanglish. If they mix languages, you may naturally mix them too. Answer the actual question first, then add useful detail only when needed. Keep voice answers concise and easy to understand. Remember the recent conversation and resolve follow-up questions using that context. Ask one short clarifying question when the request is genuinely ambiguous. Never pretend to have opened an app, changed a setting, sent a message, or completed an action. Android handles phone commands separately. Never initiate, recommend executing, or claim to execute payments, transfers, purchases, subscriptions, recharges, or paid orders; those actions are permanently blocked in Nova."))
             for (i in 0 until history.length()) {
                 val item = history.optJSONObject(i) ?: continue
                 val role = item.optString("role")
@@ -113,8 +130,12 @@ object GroqApiClient {
                 .put("max_completion_tokens", MAX_OUTPUT_TOKENS)
                 .put("stream", false)
 
-            // Count every outbound attempt, including errors and rate-limited responses.
-            prefs.edit().putInt("requests", prefs.getInt("requests", 0) + 1).apply()
+            // Count every outbound attempt, including errors and provider rate-limit responses.
+            activeRequests.put(now)
+            prefs.edit()
+                .putInt("requests", prefs.getInt("requests", 0) + 1)
+                .putString("request_times", activeRequests.toString())
+                .apply()
             val connection = (URL("https://api.groq.com/openai/v1/chat/completions").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 15_000
