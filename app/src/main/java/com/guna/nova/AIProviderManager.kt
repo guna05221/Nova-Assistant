@@ -109,7 +109,7 @@ object AIProviderManager {
         } catch (e: Exception) { Result(false, "Groq test failed: ${e.message ?: "network error"}") }
     }
 
-    /** Gemini primary, Groq fallback. Returns null if neither provider is configured/available. */
+    /** Gemini is preferred; Groq is used only when no Gemini key is configured. Provider errors never trigger cross-provider fallback. */
     fun plan(context: Context, systemPrompt: String, userText: String): Result {
         if (!isCloudEnabled(context)) return cloudDisabledResult()
         val geminiKey = get(context, GEMINI)
@@ -126,8 +126,10 @@ object AIProviderManager {
                         .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
                     return Result(true, text, "Gemini")
                 }
-                if (response.first !in listOf(408, 429, 500, 502, 503, 504)) return Result(false, "Gemini request failed (HTTP ${response.first}).")
-            } catch (_: Exception) { /* try configured fallback */ }
+                return Result(false, "Gemini request failed (HTTP ${response.first}).")
+            } catch (e: Exception) {
+                return Result(false, "Gemini request failed: ${e.message ?: "network error"}")
+            }
         }
         val groqKey = get(context, GROQ)
         if (groqKey.isNotBlank()) {
@@ -152,7 +154,7 @@ object AIProviderManager {
     /**
      * Natural conversation endpoint. Unlike plan(), this returns plain language and
      * sends the bounded conversation history so follow-up questions retain context.
-     * Gemini is primary; Groq is the automatic fallback.
+     * Gemini is preferred; Groq is used only when no Gemini key is configured.
      */
     fun chat(context: Context, history: JSONArray): Result {
         if (!isCloudEnabled(context)) return cloudDisabledResult()
@@ -187,10 +189,12 @@ object AIProviderManager {
                     val answer = JSONObject(response.second).getJSONArray("candidates").getJSONObject(0)
                         .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text").trim()
                     if (answer.isNotBlank()) return Result(true, answer, "Gemini")
-                } else if (response.first !in listOf(408, 429, 500, 502, 503, 504)) {
+                } else {
                     return Result(false, "Gemini request failed (HTTP ${response.first}).")
                 }
-            } catch (_: Exception) { /* try Groq fallback */ }
+            } catch (e: Exception) {
+                return Result(false, "Gemini request failed: ${e.message ?: "network error"}")
+            }
         }
         val groqKey = get(context, GROQ)
         if (groqKey.isNotBlank()) {
