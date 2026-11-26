@@ -88,8 +88,8 @@ class BrainContractsTest {
 
     @Test
     fun sourceMetadataDoesNotGrantExecutionPermission() {
-        val local = PlanStep("local", IntentProposal(NovaAction.SEND, source = ProposalSource.LOCAL_MODEL))
-        val cloud = PlanStep("cloud", IntentProposal(NovaAction.SEND, source = ProposalSource.CLOUD_MODEL))
+        val local = PlanStep("local", IntentProposal(NovaAction.PAYMENT, source = ProposalSource.LOCAL_MODEL))
+        val cloud = PlanStep("cloud", IntentProposal(NovaAction.PAYMENT, source = ProposalSource.CLOUD_MODEL))
         assertFalse(BrainPolicy.evaluate(local, "send this").outcome == PolicyOutcome.ALLOW)
         assertFalse(BrainPolicy.evaluate(cloud, "send this").outcome == PolicyOutcome.ALLOW)
     }
