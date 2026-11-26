@@ -1,21 +1,8 @@
 name: Build Nova debug APK
 
 on:
+  # Builds are deliberately manual until Phase 1 implementation is complete.
   workflow_dispatch:
-  push:
-    branches: [main, fix/voice-conversation-pipeline, phase1/brain-foundation]
-    paths:
-      - '**.gradle.kts'
-      - 'gradle.properties'
-      - 'app/**'
-      - '.github/workflows/build.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - '**.gradle.kts'
-      - 'gradle.properties'
-      - 'app/**'
-      - '.github/workflows/build.yml'
 
 permissions:
   contents: read
