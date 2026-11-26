@@ -175,8 +175,8 @@ object NovaCommand {
         }
 
         val answer = when {
-            proposal?.action == NovaAction.CONVERSATION && !proposal.reply.isNullOrBlank() ->
-                proposal.reply
+            proposal?.action == NovaAction.CONVERSATION && !proposal?.reply.isNullOrBlank() ->
+                proposal?.reply
             cloudAvailable -> {
                 val result = AIProviderManager.chat(context, history)
                 if (result.ok) result.message
