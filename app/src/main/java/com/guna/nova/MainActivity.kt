@@ -74,14 +74,11 @@ class MainActivity : ComponentActivity() {
         // Remove credentials and downloaded AI model data left by earlier Nova builds.
         getSharedPreferences("nova_ai_secure", MODE_PRIVATE).edit().clear().apply()
         getSharedPreferences("nova_chatgpt", MODE_PRIVATE).edit().clear().apply()
-        getSharedPreferences("nova_brain", MODE_PRIVATE).edit().clear().apply()
+        // Keep nova_brain: it stores Nova's short conversation context and workspace data.
         java.io.File(filesDir, "models").deleteRecursively()
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
-        val asks = mutableListOf(
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        )
+        // Request microphone only when needed. Location is not required for current Nova features. 
+        val asks = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (Build.VERSION.SDK_INT >= 33) asks += Manifest.permission.POST_NOTIFICATIONS
         permissions.launch(asks.toTypedArray())
 
