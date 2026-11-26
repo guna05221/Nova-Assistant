@@ -148,9 +148,17 @@ class WakeWordService : Service() {
                         val now = SystemClock.elapsedRealtime()
                         val normalized = phrase.lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ").trim()
                         val isRecentEcho = normalized == lastHandledPhrase && now - lastHandledAt < 1200L
-                        if (isRecentEcho) {
+                        val isAssistantEcho = NovaSpeech.isSpeaking() && NovaSpeech.isLikelyEcho(phrase)
+                        if (isAssistantEcho) {
+                            Log.i(TAG, "Ignored Nova speech echo: $phrase")
+                        } else if (isRecentEcho) {
                             Log.i(TAG, "Ignored repeated recognition within echo window: $phrase")
                         } else {
+                            // A distinct phrase while TTS is active is treated as a user interruption.
+                            if (NovaSpeech.isSpeaking()) {
+                                NovaSpeech.stop()
+                                report("Nova interrupted. Listening…")
+                            }
                             lastHandledPhrase = normalized
                             lastHandledAt = now
                             NovaOverlayService.userFinal(this@WakeWordService, phrase)
