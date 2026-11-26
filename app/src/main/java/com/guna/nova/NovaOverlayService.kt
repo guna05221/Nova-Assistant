@@ -48,7 +48,7 @@ class NovaOverlayService : Service() {
             recipient: String,
             message: String,
             expiresAtElapsed: Long
-        ) {
+        ): Boolean {
             val intent = Intent(context, NovaOverlayService::class.java).apply {
                 action = ACTION_APPROVAL_REQUEST
                 putExtra(EXTRA_ID, approvalId)
@@ -57,7 +57,7 @@ class NovaOverlayService : Service() {
                 putExtra(EXTRA_MESSAGE, message)
                 putExtra(EXTRA_EXPIRES, expiresAtElapsed)
             }
-            try { context.startService(intent) } catch (_: Exception) { }
+            return try { context.startService(intent) != null } catch (_: Exception) { false }
         }
 
         fun clearApproval(context: Context, approvalId: String) {
@@ -305,6 +305,7 @@ class NovaOverlayService : Service() {
             if (approval != null) handler.post(expiryTicker)
         } catch (_: Exception) {
             panel = null
+            approval?.let { NovaCommand.onApprovalSurfaceUnavailable(this, it.id) }
         }
     }
 
