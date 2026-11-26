@@ -383,6 +383,16 @@ object NovaCommand {
         }
     }
 
+    private fun isConfirmation(text: String): Boolean = text in setOf(
+        "yes", "yes send", "confirm", "confirm send", "send now",
+        "ஆம்", "ஆமாம்", "சரி", "அனுப்பு"
+    )
+
+    private fun isCancellation(text: String): Boolean = text in setOf(
+        "no", "cancel", "cancel it", "stop", "don't send", "do not send",
+        "வேண்டாம்", "நிறுத்து", "அனுப்ப வேண்டாம்"
+    )
+
     private fun requestMessageApproval(context: Context) {
         if (!Settings.canDrawOverlays(context)) {
             say(context, "Message approval needs Nova's floating window permission. Open Nova, enable Display over other apps, then try again. Nothing was sent.")
