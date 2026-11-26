@@ -27,6 +27,7 @@ fun AIProviderSettingsCard() {
     var busy by remember { mutableStateOf(false) }
     var geminiSaved by remember { mutableStateOf(AIProviderManager.hasGemini(context)) }
     var groqSaved by remember { mutableStateOf(AIProviderManager.hasGroq(context)) }
+    var cloudEnabled by remember { mutableStateOf(AIProviderManager.isCloudEnabled(context)) }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -41,8 +42,20 @@ fun AIProviderSettingsCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             Text("Connect Nova to cloud AI", style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold)
-            Text("Gemini is primary, Groq is the backup. Local Qwen can still work offline.",
+            Text("Cloud providers are optional. Local Qwen remains available offline.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Allow cloud AI", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(if (cloudEnabled) "Enabled - request text and conversation history may be sent to providers."
+                        else "Disabled - no cloud requests will be sent. Saved keys do not grant permission.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = cloudEnabled, onCheckedChange = { enabled ->
+                    AIProviderManager.setCloudEnabled(context, enabled)
+                    cloudEnabled = enabled
+                })
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(onClick = { showDialog = true },
                     label = { Text(if (geminiSaved) "Gemini connected" else "Gemini not set") })
@@ -101,7 +114,7 @@ fun AIProviderSettingsCard() {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(
                             modifier = Modifier.weight(1f),
-                            enabled = !busy && (gemini.isNotBlank() || geminiSaved),
+                            enabled = !busy && cloudEnabled && (gemini.isNotBlank() || geminiSaved),
                             onClick = {
                                 if (gemini.isNotBlank()) AIProviderManager.saveGemini(context, gemini)
                                 busy = true
@@ -115,7 +128,7 @@ fun AIProviderSettingsCard() {
                         ) { Text("Test Gemini") }
                         OutlinedButton(
                             modifier = Modifier.weight(1f),
-                            enabled = !busy && (groq.isNotBlank() || groqSaved),
+                            enabled = !busy && cloudEnabled && (groq.isNotBlank() || groqSaved),
                             onClick = {
                                 if (groq.isNotBlank()) AIProviderManager.saveGroq(context, groq)
                                 busy = true
@@ -168,7 +181,7 @@ fun AIProviderSettingsCard() {
                         }) { Text("Remove Groq") }
                     }
                     Text(
-                        "Keys are encrypted with Android Keystore and are not uploaded to GitHub. Never share your API keys.",
+                        "Cloud permission is separate from saving keys. When enabled, request text and conversation history may be processed by the provider. Screen, clipboard and contact data are not included in these chat calls. Keys remain encrypted with Android Keystore and are not uploaded to GitHub.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
