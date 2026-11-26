@@ -132,44 +132,51 @@ object NovaCommand {
             information is missing. Return JSON only, without markdown.
         """.trimIndent()
 
-        var plannedIntent: BrainIntent? = null
+        var proposal: IntentProposal? = null
         if (cloudAvailable) {
             val planned = AIProviderManager.plan(context, plannerPrompt, plannerContext)
-            if (planned.ok) plannedIntent = parseAiIntent(planned.message)
+            if (planned.ok) proposal = BrainContractParser.parseIntent(planned.message, ProposalSource.CLOUD_MODEL)
         }
-        if (plannedIntent == null && localAvailable) {
+        if (proposal == null && localAvailable) {
             val localPlan = LocalAiManager.interpret(context, plannerContext)
-            if (!localPlan.isNullOrBlank()) plannedIntent = parseAiIntent(localPlan)
+            if (!localPlan.isNullOrBlank()) {
+                proposal = BrainContractParser.parseIntent(localPlan, ProposalSource.LOCAL_MODEL)
+            }
         }
 
         if (requestSequence.get() != requestId) return
 
-        // Model output is untrusted. Deny financial capability IDs and transaction-like
-        // arguments even if the model disguises the request as a search or food action.
-        if (plannedIntent != null && FinancialActionPolicy.mustDeny(
-                capability = plannedIntent.kind,
-                requestOrArguments = plannedIntent.value
-            )
-        ) {
+        val plan = proposal?.let { BrainPlan.single(it) }
+        val step = plan?.steps?.singleOrNull()
+        val decision = step?.let { BrainPolicy.evaluate(it, utterance) }
+
+        if (decision?.outcome == PolicyOutcome.DENY) {
             withContext(Dispatchers.Main) {
                 if (requestSequence.get() == requestId) {
-                    say(context, "I can explain financial topics, but Nova permanently blocks financial transactions and paid orders.")
+                    val message = if (decision.reasonCode == "PERMANENT_FINANCIAL_DENY")
+                        "I can explain financial topics, but Nova permanently blocks financial transactions and paid orders."
+                    else "That proposed action is not permitted."
+                    say(context, message)
                 }
             }
             return
         }
 
-        val safeAction = plannedIntent?.takeIf { isSafeModelAction(it.kind) }
-        if (safeAction != null && safeAction.kind != "CONVERSATION") {
+        if (step != null && decision?.outcome == PolicyOutcome.ALLOW &&
+            step.proposal.action != NovaAction.CONVERSATION
+        ) {
             withContext(Dispatchers.Main) {
-                if (requestSequence.get() == requestId) executeIntent(context, safeAction)
+                if (requestSequence.get() == requestId) {
+                    val result = executeModelStep(context, step, utterance)
+                    if (result.status != ExecutionStatus.DISPATCHED) say(context, result.summary)
+                }
             }
             return
         }
 
         val answer = when {
-            plannedIntent?.kind == "CONVERSATION" && !plannedIntent.value.isNullOrBlank() ->
-                plannedIntent.value
+            proposal?.action == NovaAction.CONVERSATION && !proposal.reply.isNullOrBlank() ->
+                proposal.reply
             cloudAvailable -> {
                 val result = AIProviderManager.chat(context, history)
                 if (result.ok) result.message
@@ -217,10 +224,37 @@ object NovaCommand {
         }.takeLast(1200)
     }
 
-    private fun isSafeModelAction(kind: String): Boolean = kind in setOf(
-        "OPEN_APP", "SEARCH", "WEB_SEARCH", "HOME", "BACK", "SETTINGS",
-        "SCROLL_UP", "SCROLL_DOWN", "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO"
-    )
+    /**
+     * Final model-plan boundary. Re-evaluate policy immediately before handing a
+     * typed, allow-listed proposal to the existing Android executor.
+     */
+    private fun executeModelStep(context: Context, step: PlanStep, originalRequest: String): ExecutionResult {
+        val decision = BrainPolicy.evaluate(step, originalRequest)
+        if (decision.outcome != PolicyOutcome.ALLOW) {
+            return ExecutionResult(step.id, ExecutionStatus.REJECTED, decision.reasonCode,
+                "Nova blocked this proposed action.")
+        }
+        if (FinancialActionPolicy.mustDeny(
+                capability = step.proposal.action.name,
+                requestOrArguments = listOfNotNull(originalRequest, step.proposal.target, step.proposal.reply).joinToString(" ")
+            )
+        ) {
+            return ExecutionResult(step.id, ExecutionStatus.REJECTED, "PERMANENT_FINANCIAL_DENY",
+                "Nova permanently blocks financial transactions and paid orders.")
+        }
+
+        val action = when (step.proposal.action) {
+            NovaAction.OPEN_APP, NovaAction.SEARCH, NovaAction.WEB_SEARCH, NovaAction.HOME,
+            NovaAction.BACK, NovaAction.SETTINGS, NovaAction.SCROLL_UP, NovaAction.SCROLL_DOWN,
+            NovaAction.FOOD_SEARCH, NovaAction.SEARCH_SWIGGY, NovaAction.SEARCH_ZOMATO ->
+                step.proposal.action.name
+            else -> return ExecutionResult(step.id, ExecutionStatus.REJECTED, "ACTION_NOT_EXECUTABLE",
+                "This proposed action cannot be sent to the Android executor.")
+        }
+        executeIntent(context, BrainIntent(action, step.proposal.target))
+        return ExecutionResult(step.id, ExecutionStatus.DISPATCHED, "ANDROID_EXECUTOR_DISPATCHED",
+            "The action was handed to Android. Its final outcome has not yet been independently verified.")
+    }
 
     private fun conversationHistory(context: Context, latest: String): org.json.JSONArray {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -271,34 +305,6 @@ object NovaCommand {
 
             Important limits: I can type into a focused text field and tap a clearly labelled Send button only when you explicitly tell me to send. I don't make phone calls, read private chats or notifications, place food orders, book services, make purchases or payments, transfer money, delete files, or change security settings. Search handoffs open another app; I don't yet read and compare its live results automatically.
             """.trimIndent()
-    }
-
-    private fun parseAiIntent(raw: String): BrainIntent? {
-        return try {
-            val first = raw.indexOf('{')
-            val last = raw.lastIndexOf('}')
-            if (first < 0 || last <= first) return null
-            val json = org.json.JSONObject(raw.substring(first, last + 1))
-            val action = json.optString("action", "UNSUPPORTED").uppercase(Locale.ROOT)
-            val target = json.optString("target").takeIf { it.isNotBlank() }
-            val reply = json.optString("reply").takeIf { it.isNotBlank() }
-            when (action) {
-                "OPEN_APP", "SEARCH", "HOME", "BACK", "SETTINGS", "SCROLL_UP",
-                "SCROLL_DOWN", "COPY_LAST_MESSAGE", "PASTE", "TYPE_TEXT", "SEND",
-                "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO", "WEB_SEARCH" -> BrainIntent(action, target)
-                "CONVERSATION" -> BrainIntent("CONVERSATION", reply)
-                "PAY", "PAYMENT", "BILL_PAYMENT", "TRANSFER", "MONEY_TRANSFER",
-                "BANK_TRANSFER", "UPI_TRANSFER", "PURCHASE", "BUY", "CHECKOUT",
-                "ORDER", "PLACE_ORDER", "PAID_ORDER", "FOOD_ORDER", "RECHARGE",
-                "TOP_UP", "SUBSCRIBE", "SUBSCRIPTION", "RENEW_SUBSCRIPTION",
-                "FINANCIAL_TRANSACTION" -> BrainIntent(action, target ?: reply)
-                "UNSUPPORTED", "SEND_MESSAGE", "DELETE" ->
-                    BrainIntent("CONVERSATION", reply ?: "I can't perform that action yet.")
-                else -> null
-            }
-        } catch (_: Exception) {
-            null
-        }
     }
 
     private fun executeIntent(context: Context, intent: BrainIntent) {
