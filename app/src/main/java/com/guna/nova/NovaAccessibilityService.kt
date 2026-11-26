@@ -65,8 +65,14 @@ class NovaAccessibilityService : AccessibilityService() {
         }
         return false
     }
-    override fun onInterrupt() {}
-    override fun onDestroy() { instance = null; super.onDestroy() }
+    override fun onInterrupt() {
+        NovaCommand.invalidatePendingSend(this, "Nova Accessibility was interrupted, so the approval was cancelled.")
+    }
+    override fun onDestroy() {
+        NovaCommand.invalidatePendingSend(this, "Nova Accessibility disconnected, so the approval was cancelled.")
+        instance = null
+        super.onDestroy()
+    }
 
 
     /**
