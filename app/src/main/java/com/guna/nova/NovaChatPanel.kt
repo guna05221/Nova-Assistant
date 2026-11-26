@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,6 +43,8 @@ fun NovaChatPanel(
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onVoice: () -> Unit,
+    isThinking: Boolean = false,
+    onStopSpeaking: () -> Unit = {},
     onSuggestion: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -61,18 +64,18 @@ fun NovaChatPanel(
                             modifier = Modifier.padding(17.dp).size(34.dp))
                     }
                     Spacer(Modifier.height(22.dp))
-                    Text("Phone controls", color = ChatPanelText,
+                    Text("Your AI assistant", color = ChatPanelText,
                         style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center)
                     Spacer(Modifier.height(8.dp))
-                    Text("Use direct commands to control supported phone features.",
+                    Text("Ask anything, continue a conversation, or tell Nova what to do on your phone.",
                         color = ChatPanelMuted, style = MaterialTheme.typography.bodyMedium,
                         textAlign = TextAlign.Center)
                     Spacer(Modifier.height(24.dp))
                     listOf(
-                        "Open an app" to "Open YouTube",
-                        "Search the web" to "Search for Java tutorials",
-                        "Phone settings" to "Open settings"
+                        "Explain a concept" to "Explain Java OOP with a simple example",
+                        "Continue a conversation" to "Give me a practical example",
+                        "Control my phone" to "Open YouTube"
                     ).forEach { (title, prompt) ->
                         Surface(
                             color = ChatPanelSurface, shape = RoundedCornerShape(16.dp),
@@ -118,6 +121,19 @@ fun NovaChatPanel(
                         }
                     }
                 }
+                if (isThinking) {
+                    item {
+                        Row(Modifier.fillMaxWidth().padding(start = 38.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = ChatPanelAccent,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text("Nova is thinking…", color = ChatPanelMuted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
             }
         }
 
@@ -133,7 +149,10 @@ fun NovaChatPanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onVoice, modifier = Modifier.size(42.dp)) {
-                        Icon(Icons.Default.Mic, "Voice input", tint = ChatPanelMuted)
+                        Icon(Icons.Default.Mic, "Talk to Nova", tint = ChatPanelMuted)
+                    }
+                    IconButton(onClick = onStopSpeaking, modifier = Modifier.size(38.dp)) {
+                        Icon(Icons.Default.Stop, "Stop Nova speaking", tint = ChatPanelAccent)
                     }
                     BasicTextField(
                         value = input,
@@ -146,7 +165,7 @@ fun NovaChatPanel(
                         keyboardActions = KeyboardActions(onSend = { if (input.isNotBlank()) onSend() }),
                         decorationBox = { innerTextField ->
                             Box {
-                                if (input.isBlank()) Text("Enter a phone command", color = ChatPanelMuted,
+                                if (input.isBlank()) Text("Message Nova…", color = ChatPanelMuted,
                                     style = MaterialTheme.typography.bodyLarge)
                                 innerTextField()
                             }
@@ -163,7 +182,7 @@ fun NovaChatPanel(
                     }
                 }
             }
-            Text("Direct phone commands only · AI features removed.",
+            Text("AI conversation · Phone commands run locally · Tap ■ to stop speech",
                 color = ChatPanelMuted, style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp))
         }
