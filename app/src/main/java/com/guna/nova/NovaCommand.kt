@@ -29,9 +29,9 @@ object NovaCommand {
 
         val requestId = requestSequence.incrementAndGet()
 
-        // Transaction safety is enforced before any model sees the request.
-        if (isFinancialAction(command)) {
-            say(appContext, "I can explain payment options, but Nova never makes payments, transfers, purchases, subscriptions, recharges or paid orders.")
+        // Permanent financial-action denial runs before intent interpretation or any model.
+        if (FinancialActionPolicy.mustDeny(requestOrArguments = command)) {
+            say(appContext, "I can explain financial topics, but Nova permanently blocks payments, transfers, purchases, paid orders, recharges and subscriptions.")
             return
         }
 
@@ -107,6 +107,21 @@ object NovaCommand {
 
         if (requestSequence.get() != requestId) return
 
+        // Model output is untrusted. Deny financial capability IDs and transaction-like
+        // arguments even if the model disguises the request as a search or food action.
+        if (plannedIntent != null && FinancialActionPolicy.mustDeny(
+                capability = plannedIntent.kind,
+                requestOrArguments = plannedIntent.value
+            )
+        ) {
+            withContext(Dispatchers.Main) {
+                if (requestSequence.get() == requestId) {
+                    say(context, "I can explain financial topics, but Nova permanently blocks financial transactions and paid orders.")
+                }
+            }
+            return
+        }
+
         val safeAction = plannedIntent?.takeIf { isSafeModelAction(it.kind) }
         if (safeAction != null && safeAction.kind != "CONVERSATION") {
             withContext(Dispatchers.Main) {
@@ -167,14 +182,6 @@ object NovaCommand {
     private fun isSafeModelAction(kind: String): Boolean = kind in setOf(
         "OPEN_APP", "SEARCH", "WEB_SEARCH", "HOME", "BACK", "SETTINGS",
         "SCROLL_UP", "SCROLL_DOWN", "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO"
-    )
-
-    private fun isFinancialAction(text: String): Boolean = containsAny(
-        text,
-        "make a payment", "pay my bill", "pay the bill", "pay this bill", "pay now",
-        "send money", "transfer money", "money transfer", "upi payment", "make payment",
-        "buy this", "purchase this", "place an order", "order this", "subscribe now",
-        "pay using", "pay through upi", "recharge my"
     )
 
     private fun conversationHistory(context: Context, latest: String): org.json.JSONArray {
@@ -242,7 +249,12 @@ object NovaCommand {
                 "SCROLL_DOWN", "COPY_LAST_MESSAGE", "PASTE", "TYPE_TEXT", "SEND",
                 "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO", "WEB_SEARCH" -> BrainIntent(action, target)
                 "CONVERSATION" -> BrainIntent("CONVERSATION", reply)
-                "UNSUPPORTED", "SEND_MESSAGE", "PAYMENT", "DELETE" ->
+                "PAY", "PAYMENT", "BILL_PAYMENT", "TRANSFER", "MONEY_TRANSFER",
+                "BANK_TRANSFER", "UPI_TRANSFER", "PURCHASE", "BUY", "CHECKOUT",
+                "ORDER", "PLACE_ORDER", "PAID_ORDER", "FOOD_ORDER", "RECHARGE",
+                "TOP_UP", "SUBSCRIBE", "SUBSCRIPTION", "RENEW_SUBSCRIPTION",
+                "FINANCIAL_TRANSACTION" -> BrainIntent(action, target ?: reply)
+                "UNSUPPORTED", "SEND_MESSAGE", "DELETE" ->
                     BrainIntent("CONVERSATION", reply ?: "I can't perform that action yet.")
                 else -> null
             }
@@ -252,6 +264,17 @@ object NovaCommand {
     }
 
     private fun executeIntent(context: Context, intent: BrainIntent) {
+        // Last line of defence: no caller (voice, model, UI or future planner)
+        // may bypass the permanent financial deny policy.
+        if (FinancialActionPolicy.mustDeny(
+                capability = intent.kind,
+                requestOrArguments = intent.value
+            )
+        ) {
+            say(context, "I can explain financial topics, but Nova permanently blocks financial transactions and paid orders.")
+            return
+        }
+
         when (intent.kind) {
             "COPY_LAST_MESSAGE" -> {
                 val service = NovaAccessibilityService.instance
