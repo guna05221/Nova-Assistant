@@ -51,6 +51,7 @@ dependencies {
     // On-device llama.cpp inference runtime (arm64-v8a, CPU/NEON).
     implementation("dev.ffmpegkit-maintained:llama-android:0.1.1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 
