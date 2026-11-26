@@ -42,7 +42,7 @@ fun AIProviderSettingsCard() {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
             Text("Connect Nova to cloud AI", style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold)
-            Text("Cloud providers are optional. Local Qwen remains available offline.",
+            Text("Cloud providers are optional. When enabled, Nova uses Gemini if configured, otherwise Groq. A cloud error falls back to local Qwen, never another cloud provider.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
