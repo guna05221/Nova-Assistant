@@ -105,13 +105,27 @@ object NovaCommand {
 
     private suspend fun processUnknownUtterance(context: Context, utterance: String, requestId: Long) {
         val history = conversationHistory(context, utterance)
+        val allTurns = conversationTurns(history)
+        val conversation = ConversationContextEngine.analyze(allTurns.dropLast(1), utterance)
+        if (conversation.requiresClarification) {
+            val clarification = conversation.clarification ?: "Which earlier topic do you mean?"
+            saveConversation(context, utterance, clarification)
+            withContext(Dispatchers.Main) {
+                if (requestSequence.get() == requestId) say(context, clarification)
+            }
+            return
+        }
+        val cloudHistory = cloudHistory(conversation.cloudTurns)
         val localAvailable = LocalAiManager.isDownloaded(context)
         val cloudAvailable = AiRoutingPolicy.cloudPermitted(
             consentEnabled = AIProviderManager.isCloudEnabled(context),
             providerConfigured = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
         )
 
-        val plannerContext = buildPlannerContext(history, utterance)
+        val plannerContext = conversation.localPrompt
+        val cloudPlannerContext = conversation.cloudTurns.joinToString("\n") {
+            it.role + ": " + it.content
+        }.takeLast(1800)
         val plannerPrompt = """
             You are Nova, a safe Android voice assistant. Understand English, Tamil and Tanglish.
             The user input includes recent conversation context and the current request. Use prior turns
@@ -153,7 +167,7 @@ object NovaCommand {
             )
         ) {
             if (requestSequence.get() != requestId) return
-            val planned = AIProviderManager.plan(context, plannerPrompt, plannerContext)
+            val planned = AIProviderManager.plan(context, plannerPrompt, cloudPlannerContext)
             if (planned.ok) proposal = BrainContractParser.parseIntent(planned.message, ProposalSource.CLOUD_MODEL)
         }
 
@@ -189,7 +203,7 @@ object NovaCommand {
 
         val hasPlannerReply = proposal?.action == NovaAction.CONVERSATION && !proposal?.reply.isNullOrBlank()
         val localAnswer = if (!hasPlannerReply && localAvailable) {
-            LocalAiManager.chat(context, history.toString())
+            LocalAiManager.chat(context, conversation.localPrompt)
         } else null
         val answer = when {
             proposal?.action == NovaAction.CONVERSATION && !proposal?.reply.isNullOrBlank() ->
@@ -201,7 +215,7 @@ object NovaCommand {
                 providerConfigured = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
             ) -> {
                 if (requestSequence.get() != requestId) return
-                val result = AIProviderManager.chat(context, history)
+                val result = AIProviderManager.chat(context, cloudHistory)
                 result.message.takeIf { result.ok && it.isNotBlank() }
             }
             else -> null
@@ -222,27 +236,22 @@ object NovaCommand {
         }
     }
 
-    private fun buildPlannerContext(history: org.json.JSONArray, latest: String): String {
-        val previous = StringBuilder()
-        val end = (history.length() - 1).coerceAtLeast(0)
-        val start = (end - 4).coerceAtLeast(0)
-        for (index in start until end) {
-            val item = history.optJSONObject(index) ?: continue
+    private fun conversationTurns(history: org.json.JSONArray): List<ConversationTurn> =
+        (0 until history.length()).mapNotNull { index ->
+            val item = history.optJSONObject(index) ?: return@mapNotNull null
             val role = item.optString("role")
             val content = item.optString("content").trim()
             if ((role == "user" || role == "assistant") && content.isNotBlank()) {
-                previous.append(role).append(": ").append(content.take(150)).append("\n")
+                ConversationTurn(role, content.take(1600))
+            } else null
+        }
+
+    private fun cloudHistory(turns: List<ConversationTurn>): org.json.JSONArray =
+        org.json.JSONArray().also { result ->
+            turns.takeLast(4).forEach { turn ->
+                result.put(org.json.JSONObject().put("role", turn.role).put("content", turn.content.take(500)))
             }
         }
-        return buildString {
-            if (previous.isNotEmpty()) {
-                append("Recent conversation:\n")
-                append(previous)
-            }
-            append("Current user request: ")
-            append(latest.take(500))
-        }.takeLast(1200)
-    }
 
     /**
      * Final model-plan boundary. Re-evaluate policy immediately before handing a
