@@ -3,7 +3,7 @@ name: Build Nova debug APK
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/voice-conversation-pipeline]
+    branches: [main, fix/voice-conversation-pipeline, phase1/brain-foundation]
     paths:
       - '**.gradle.kts'
       - 'gradle.properties'
@@ -53,6 +53,8 @@ jobs:
           else
             echo "Persistent signing key is not configured yet; using temporary debug signing."
           fi
+      - name: Run unit tests
+        run: gradle --no-daemon testDebugUnitTest
       - name: Build debug APK
         env:
           NOVA_KEYSTORE_FILE: ${{ secrets.NOVA_KEYSTORE_BASE64 != '' && 'nova-release.jks' || '' }}
