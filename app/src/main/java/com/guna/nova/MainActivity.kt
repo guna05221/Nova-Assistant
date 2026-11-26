@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
             var running by remember { mutableStateOf(false) }
             var status by remember { mutableStateOf("Ready when you are") }
             var chatInput by remember { mutableStateOf("") }
+            var isThinking by remember { mutableStateOf(false) }
             var selectedTab by remember { mutableIntStateOf(0) }
             val chatMessages = remember { mutableStateListOf<NovaChatLine>() }
             var lastAssistantAt by remember { mutableLongStateOf(0L) }
@@ -99,6 +100,7 @@ class MainActivity : ComponentActivity() {
                     val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty()
                     if (spoken.isNotBlank()) {
                         chatMessages.add(NovaChatLine("YOU", spoken))
+                        isThinking = true
                         NovaCommand.execute(this@MainActivity, spoken)
                     }
                 }
@@ -109,6 +111,7 @@ class MainActivity : ComponentActivity() {
                 if (message.isNotBlank()) {
                     chatMessages.add(NovaChatLine("YOU", message))
                     chatInput = ""
+                    isThinking = true
                     NovaCommand.execute(this@MainActivity, message)
                 }
             }
@@ -137,6 +140,7 @@ class MainActivity : ComponentActivity() {
                         val assistantText = prefs.getString("last_assistant_message", "").orEmpty()
                         if (assistantText.isNotBlank()) chatMessages.add(NovaChatLine("NOVA", assistantText))
                         lastAssistantAt = assistantAt
+                        isThinking = false
                     }
                     delay(700)
                 }
@@ -289,6 +293,8 @@ class MainActivity : ComponentActivity() {
                                     onInputChange = { chatInput = it },
                                     onSend = { sendChatMessage() },
                                     onVoice = { startVoiceChat() },
+                                    isThinking = isThinking,
+                                    onStopSpeaking = { NovaSpeech.stop() },
                                     onSuggestion = { prompt ->
                                         chatMessages.add(NovaChatLine("YOU", prompt))
                                         NovaCommand.execute(this@MainActivity, prompt)
