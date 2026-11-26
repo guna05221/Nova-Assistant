@@ -105,8 +105,11 @@ object NovaCommand {
 
     private suspend fun processUnknownUtterance(context: Context, utterance: String, requestId: Long) {
         val history = conversationHistory(context, utterance)
-        val cloudAvailable = AIProviderManager.hasEnabledCloudProvider(context)
         val localAvailable = LocalAiManager.isDownloaded(context)
+        val cloudAvailable = AiRoutingPolicy.cloudPermitted(
+            consentEnabled = AIProviderManager.isCloudEnabled(context),
+            providerConfigured = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
+        )
 
         val plannerContext = buildPlannerContext(history, utterance)
         val plannerPrompt = """
@@ -132,16 +135,26 @@ object NovaCommand {
             information is missing. Return JSON only, without markdown.
         """.trimIndent()
 
+        // Always ask the on-device Qwen model first. A saved key never changes this order.
         var proposal: IntentProposal? = null
-        if (cloudAvailable) {
-            val planned = AIProviderManager.plan(context, plannerPrompt, plannerContext)
-            if (planned.ok) proposal = BrainContractParser.parseIntent(planned.message, ProposalSource.CLOUD_MODEL)
-        }
-        if (proposal == null && localAvailable) {
+        if (localAvailable) {
             val localPlan = LocalAiManager.interpret(context, plannerContext)
             if (!localPlan.isNullOrBlank()) {
                 proposal = BrainContractParser.parseIntent(localPlan, ProposalSource.LOCAL_MODEL)
             }
+        }
+
+        // Cloud planning is a fallback only after local inference is unavailable or unusable,
+        // and only when the separate explicit-consent gate and a configured provider both pass.
+        if (proposal == null && AiRoutingPolicy.shouldAttemptCloudFallback(
+                localSucceeded = false,
+                consentEnabled = AIProviderManager.isCloudEnabled(context),
+                providerConfigured = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
+            )
+        ) {
+            if (requestSequence.get() != requestId) return
+            val planned = AIProviderManager.plan(context, plannerPrompt, plannerContext)
+            if (planned.ok) proposal = BrainContractParser.parseIntent(planned.message, ProposalSource.CLOUD_MODEL)
         }
 
         if (requestSequence.get() != requestId) return
@@ -174,16 +187,20 @@ object NovaCommand {
             return
         }
 
+        val localAnswer = if (localAvailable) LocalAiManager.chat(context, history.toString()) else null
         val answer = when {
             proposal?.action == NovaAction.CONVERSATION && !proposal?.reply.isNullOrBlank() ->
                 proposal?.reply
-            cloudAvailable -> {
+            !localAnswer.isNullOrBlank() -> localAnswer
+            AiRoutingPolicy.shouldAttemptCloudFallback(
+                localSucceeded = false,
+                consentEnabled = AIProviderManager.isCloudEnabled(context),
+                providerConfigured = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
+            ) -> {
+                if (requestSequence.get() != requestId) return
                 val result = AIProviderManager.chat(context, history)
-                if (result.ok) result.message
-                else if (localAvailable) LocalAiManager.chat(context, history.toString())
-                else null
+                result.message.takeIf { result.ok && it.isNotBlank() }
             }
-            localAvailable -> LocalAiManager.chat(context, history.toString())
             else -> null
         }
 
