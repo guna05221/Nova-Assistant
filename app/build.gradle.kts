@@ -48,8 +48,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation(files("libs/sherpa-onnx-2.0.1.aar"))
-    // On-device llama.cpp inference runtime (arm64-v8a, CPU/NEON).
-    implementation("dev.ffmpegkit-maintained:llama-android:0.1.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
 

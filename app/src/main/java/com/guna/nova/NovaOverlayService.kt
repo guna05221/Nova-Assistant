@@ -13,16 +13,16 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import kotlin.math.max
 
 /**
- * User-controlled, on-screen live conversation panel. Speech content is kept in memory only.
- * The microphone itself remains owned by WakeWordService and Android's privacy indicator.
+ * Compact, non-focusable Nova launcher chip.
+ *
+ * The overlay is intentionally not a chat window: it never captures keyboard input
+ * or displays a partial conversation. Tapping it opens the full-screen chat Activity.
+ * WakeWordService remains responsible for microphone capture.
  */
 class NovaOverlayService : Service() {
     companion object {
@@ -33,7 +33,7 @@ class NovaOverlayService : Service() {
         const val ACTION_ASSISTANT = "com.guna.nova.overlay.ASSISTANT"
         const val ACTION_STATUS = "com.guna.nova.overlay.STATUS"
         const val EXTRA_TEXT = "text"
-        @Volatile private var service: NovaOverlayService? = null
+        @Volatile var chatScreenVisible: Boolean = false
 
         fun show(context: android.content.Context) = send(context, ACTION_SHOW)
         fun hide(context: android.content.Context) = send(context, ACTION_HIDE)
@@ -50,219 +50,198 @@ class NovaOverlayService : Service() {
     }
 
     private lateinit var windowManager: WindowManager
-    private var panel: LinearLayout? = null
-    private var conversation: LinearLayout? = null
+    private var chip: LinearLayout? = null
     private var statusView: TextView? = null
-    private var scroll: ScrollView? = null
-    private var params: WindowManager.LayoutParams? = null
-    private var partialView: TextView? = null
-    private val history = ArrayDeque<Pair<String, String>>()
+    private var windowParams: WindowManager.LayoutParams? = null
+    private var currentStatus = "Tap to chat with Nova"
 
     override fun onCreate() {
         super.onCreate()
-        service = this
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_HIDE -> { removePanel(); stopSelf() }
-            ACTION_SHOW -> showPanel()
+            ACTION_HIDE -> { removeChip(); stopSelf() }
+            ACTION_SHOW -> showChip()
             ACTION_USER_PARTIAL -> {
-                showPanel()
-                updatePartial(intent.getStringExtra(EXTRA_TEXT).orEmpty())
+                showChip()
+                setStatus("Listening…")
             }
             ACTION_USER_FINAL -> {
-                showPanel()
-                val text = intent.getStringExtra(EXTRA_TEXT).orEmpty()
-                if (text.isNotBlank()) addTurn("YOU", text)
-                removePartial()
-                setStatus("Processing")
+                showChip()
+                setStatus("Thinking…")
             }
             ACTION_ASSISTANT -> {
-                showPanel()
-                val text = intent.getStringExtra(EXTRA_TEXT).orEmpty()
-                if (text.isNotBlank()) addTurn("NOVA", text)
-                removePartial()
-                setStatus("Speaking")
+                showChip()
+                setStatus("Nova replied · Tap to chat")
             }
             ACTION_STATUS -> {
-                showPanel()
-                setStatus(intent.getStringExtra(EXTRA_TEXT).orEmpty())
+                showChip()
+                setStatus(friendlyStatus(intent.getStringExtra(EXTRA_TEXT).orEmpty()))
             }
         }
         return START_NOT_STICKY
     }
 
-    private fun showPanel() {
-        if (!Settings.canDrawOverlays(this)) return
-        if (panel != null) return
+    private fun showChip() {
+        if (chatScreenVisible) { removeChip(); return }
+        if (!Settings.canDrawOverlays(this) || chip != null) return
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-            background = GradientDrawable().apply {
-                setColor(Color.rgb(20, 26, 43))
-                cornerRadius = dp(20).toFloat()
-                setStroke(dp(1), Color.rgb(105, 96, 170))
-            }
-            elevation = dp(12).toFloat()
-        }
-        val header = LinearLayout(this).apply {
+
+        val container = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(15), dp(10), dp(13), dp(10))
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(35, 35, 35))
+                cornerRadius = dp(30).toFloat()
+                setStroke(dp(1), Color.rgb(91, 83, 130))
+            }
+            elevation = dp(10).toFloat()
+            contentDescription = "Open Nova full-screen chat"
+        }
+
+        val mark = TextView(this).apply {
+            text = "✦"
+            textSize = 19f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(184, 167, 255))
+        }
+        val labels = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), 0, 0, 0)
         }
         val title = TextView(this).apply {
-            text = "◉  NOVA"
-            setTextColor(Color.WHITE)
+            text = "Nova"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
         }
         statusView = TextView(this).apply {
-            text = "Listening"
-            setTextColor(Color.rgb(101, 229, 213))
-            textSize = 12f
-            gravity = Gravity.END
-        }
-        header.addView(title, LinearLayout.LayoutParams(0, dp(28), 1f))
-        header.addView(statusView, LinearLayout.LayoutParams(dp(105), dp(28)))
-        card.addView(header)
-
-        scroll = ScrollView(this).apply { isFillViewport = false }
-        conversation = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(4), 0, dp(4))
-        }
-        scroll!!.addView(conversation)
-        card.addView(scroll, LinearLayout.LayoutParams(-1, dp(190)))
-
-        val controls = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-        }
-        val minimize = Button(this).apply {
-            text = "Minimise"
+            text = currentStatus
             textSize = 11f
-            setOnClickListener { removePanel() }
+            setTextColor(Color.rgb(180, 180, 180))
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
-        val close = Button(this).apply {
-            text = "Close"
-            textSize = 11f
+        labels.addView(title)
+        labels.addView(statusView)
+        container.addView(mark, LinearLayout.LayoutParams(dp(22), -2))
+        container.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+
+        val close = TextView(this).apply {
+            text = "×"
+            textSize = 22f
+            setTextColor(Color.rgb(190, 190, 190))
+            gravity = Gravity.CENTER
+            setPadding(dp(8), 0, dp(2), 0)
+            contentDescription = "Close Nova floating button"
             setOnClickListener { hide(this@NovaOverlayService) }
         }
-        controls.addView(minimize)
-        controls.addView(close)
-        card.addView(controls)
+        container.addView(close, LinearLayout.LayoutParams(dp(30), dp(34)))
 
-        val windowType = if (Build.VERSION.SDK_INT >= 26)
+        val type = if (Build.VERSION.SDK_INT >= 26)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
-        val windowParams = WindowManager.LayoutParams(
-            max(resources.displayMetrics.widthPixels - dp(24), dp(260)),
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            windowType,
+
+        val params = WindowManager.LayoutParams(
+            dp(220),
+            dp(58),
+            type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            x = 0
-            y = dp(42)
+            // Keep the compact pill below the app header, away from the chat composer.
+            gravity = Gravity.TOP or Gravity.END
+            x = dp(14)
+            y = dp(92)
         }
-        var startX = 0f
-        var startY = 0f
+
+        var downX = 0f
+        var downY = 0f
         var initialX = 0
         var initialY = 0
-        header.setOnTouchListener { _, event ->
+        var dragged = false
+        container.setOnTouchListener { view, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    startX = event.rawX; startY = event.rawY
-                    initialX = windowParams.x; initialY = windowParams.y
+                    downX = event.rawX
+                    downY = event.rawY
+                    initialX = params.x
+                    initialY = params.y
+                    dragged = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    windowParams.x = initialX + (event.rawX - startX).toInt()
-                    windowParams.y = initialY + (event.rawY - startY).toInt()
-                    try { windowManager.updateViewLayout(card, windowParams) } catch (_: Exception) { }
+                    val dx = (event.rawX - downX).toInt()
+                    val dy = (event.rawY - downY).toInt()
+                    if (kotlin.math.abs(dx) > dp(5) || kotlin.math.abs(dy) > dp(5)) dragged = true
+                    if (dragged) {
+                        params.x = max(0, initialX - dx)
+                        params.y = max(0, initialY - dy)
+                        try { windowManager.updateViewLayout(view, params) } catch (_: Exception) { }
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!dragged) openFullChat()
                     true
                 }
                 else -> true
             }
         }
+
         try {
-            windowManager.addView(card, windowParams)
-            panel = card
-            params = windowParams
-            history.forEach { (speaker, message) -> appendBubble(speaker, message) }
+            windowManager.addView(container, params)
+            chip = container
+            windowParams = params
         } catch (_: Exception) {
-            panel = null
+            chip = null
+            statusView = null
         }
     }
 
-    private fun addTurn(speaker: String, message: String) {
-        history.addLast(speaker to message.take(700))
-        while (history.size > 12) history.removeFirst()
-        if (panel == null) showPanel()
-        appendBubble(speaker, message.take(700))
+    private fun openFullChat() {
+        removeChip()
+        val launch = packageManager.getLaunchIntentForPackage(packageName) ?: return
+        launch.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+        )
+        try { startActivity(launch) } catch (_: Exception) { }
     }
 
-    private fun appendBubble(speaker: String, message: String) {
-        val target = conversation ?: return
-        val density = resources.displayMetrics.density
-        val bubble = TextView(this).apply {
-            text = "$speaker\n$message"
-            textSize = 13f
-            setTextColor(if (speaker == "YOU") Color.rgb(220, 225, 242) else Color.WHITE)
-            setPadding((10 * density).toInt(), (8 * density).toInt(), (10 * density).toInt(), (8 * density).toInt())
-            background = GradientDrawable().apply {
-                setColor(if (speaker == "YOU") Color.rgb(42, 51, 75) else Color.rgb(52, 48, 83))
-                cornerRadius = 14 * density
-            }
+    private fun friendlyStatus(raw: String): String {
+        val value = raw.lowercase()
+        return when {
+            value.contains("429") || value.contains("rate limit") -> "Service busy · Tap to retry in chat"
+            value.contains("http") || value.contains("failed") || value.contains("error") -> "Something needs attention · Tap to chat"
+            value.contains("listen") -> "Listening…"
+            value.contains("speak") -> "Nova is speaking"
+            value.contains("think") || value.contains("process") -> "Thinking…"
+            else -> "Tap to chat with Nova"
         }
-        target.addView(bubble, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = (7 * density).toInt()
-        })
-        scroll?.post { scroll?.fullScroll(View.FOCUS_DOWN) }
-    }
-
-    private fun updatePartial(text: String) {
-        if (text.isBlank()) return
-        removePartial()
-        val target = conversation ?: return
-        partialView = TextView(this).apply {
-            this.text = "YOU · $text"
-            textSize = 13f
-            setTextColor(Color.LTGRAY)
-            setPadding(8, 8, 8, 8)
-        }
-        target.addView(partialView)
-        scroll?.post { scroll?.fullScroll(View.FOCUS_DOWN) }
-        setStatus("Listening")
-    }
-
-    private fun removePartial() {
-        partialView?.let { conversation?.removeView(it) }
-        partialView = null
     }
 
     private fun setStatus(value: String) {
-        statusView?.text = value.take(24)
+        currentStatus = value.take(48)
+        statusView?.text = currentStatus
     }
 
-    private fun removePanel() {
-        val current = panel ?: return
+    private fun removeChip() {
+        val current = chip ?: return
         try { windowManager.removeView(current) } catch (_: Exception) { }
-        panel = null
-        conversation = null
+        chip = null
         statusView = null
-        scroll = null
-        partialView = null
+        windowParams = null
     }
 
     override fun onDestroy() {
-        removePanel()
-        if (service === this) service = null
+        removeChip()
         super.onDestroy()
     }
 

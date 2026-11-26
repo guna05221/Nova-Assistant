@@ -18,6 +18,7 @@ object NovaSpeech {
     @Volatile private var ready = false
     @Volatile private var pending: String? = null
     @Volatile private var activeUtteranceId: String? = null
+    @Volatile private var currentSpeechText: String = ""
     private val utteranceSequence = AtomicLong(0L)
 
     @Synchronized
@@ -25,7 +26,6 @@ object NovaSpeech {
         val text = message.trim()
         if (text.isBlank()) return
 
-        WakeWordService.pauseForSpeech()
         val current = engine
         if (current == null) {
             pending = text
@@ -97,22 +97,44 @@ object NovaSpeech {
     private fun speakReady(tts: TextToSpeech, text: String) {
         if (!selectVoice(tts, text)) {
             activeUtteranceId = null
+            currentSpeechText = ""
             WakeWordService.resumeAfterSpeech()
             return
         }
         val id = "nova-response-${utteranceSequence.incrementAndGet()}"
         activeUtteranceId = id
+        currentSpeechText = text
         val result = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
         if (result == TextToSpeech.ERROR) {
             activeUtteranceId = null
+            currentSpeechText = ""
             WakeWordService.resumeAfterSpeech()
         }
     }
+
+    fun isSpeaking(): Boolean = activeUtteranceId != null
+
+    fun isLikelyEcho(recognized: String): Boolean {
+        val heard = normalize(recognized)
+        val spoken = normalize(currentSpeechText)
+        if (heard.isBlank() || spoken.isBlank()) return false
+        if (heard == spoken || spoken.contains(heard)) return true
+        val heardWords = heard.split(" ").filter { it.length > 2 }.toSet()
+        val spokenWords = spoken.split(" ").filter { it.length > 2 }.toSet()
+        if (heardWords.size < 2) return false
+        val overlap = heardWords.intersect(spokenWords).size.toFloat() / heardWords.size
+        return overlap >= 0.75f
+    }
+
+    private fun normalize(value: String): String =
+        value.lowercase(Locale.ROOT).replace(Regex("[^\\p{L}\\p{N} ]"), " ")
+            .replace(Regex("\\s+"), " ").trim()
 
     @Synchronized
     private fun finishUtterance(utteranceId: String?) {
         if (utteranceId != null && activeUtteranceId == utteranceId) {
             activeUtteranceId = null
+            currentSpeechText = ""
             WakeWordService.resumeAfterSpeech()
         }
     }
@@ -120,6 +142,7 @@ object NovaSpeech {
     @Synchronized
     fun stop() {
         activeUtteranceId = null
+        currentSpeechText = ""
         pending = null
         engine?.stop()
         WakeWordService.resumeAfterSpeech()

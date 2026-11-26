@@ -76,11 +76,10 @@ class WakeWordService : Service() {
         getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
             .putBoolean("running", true).putString("status", "Starting microphone…").apply()
         if (intent?.action == ACTION_ENROLL) Thread({ enrollVoice() }, "NovaEnrollment").start()
-        else if (identity?.isEnrolled() != true) {
-            report("Set up your voice profile first. Speaker verification is separate from speech recognition.", false)
-            active = false
-            stopSelf()
-        } else startSpeechRecognition()
+        else {
+            // Speaker-profile enrollment is optional and must not block ordinary speech recognition.
+            startSpeechRecognition()
+        }
         return START_NOT_STICKY
     }
 
@@ -149,9 +148,17 @@ class WakeWordService : Service() {
                         val now = SystemClock.elapsedRealtime()
                         val normalized = phrase.lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ").trim()
                         val isRecentEcho = normalized == lastHandledPhrase && now - lastHandledAt < 1200L
-                        if (isRecentEcho) {
+                        val isAssistantEcho = NovaSpeech.isSpeaking() && NovaSpeech.isLikelyEcho(phrase)
+                        if (isAssistantEcho) {
+                            Log.i(TAG, "Ignored Nova speech echo: $phrase")
+                        } else if (isRecentEcho) {
                             Log.i(TAG, "Ignored repeated recognition within echo window: $phrase")
                         } else {
+                            // A distinct phrase while TTS is active is treated as a user interruption.
+                            if (NovaSpeech.isSpeaking()) {
+                                NovaSpeech.stop()
+                                report("Nova interrupted. Listening…")
+                            }
                             lastHandledPhrase = normalized
                             lastHandledAt = now
                             NovaOverlayService.userFinal(this@WakeWordService, phrase)

@@ -33,31 +33,20 @@ object NovaCommand {
 
     fun execute(context: Context, raw: String) {
         val appContext = context.applicationContext
-        val original = raw.trim()
-        val command = normalize(original)
+        val command = normalize(raw.trim())
         if (command.isBlank()) return
 
-        val requestId = requestSequence.incrementAndGet()
-
-        // Financial actions are permanently blocked before confirmation or AI routing.
         if (isFinancialAction(command)) {
             synchronized(pendingSendLock) { pendingSend = null }
-            say(appContext, "I can explain payment options, but Nova permanently blocks payments, transfers, purchases, subscriptions, recharges and paid orders.")
+            say(appContext, "Nova does not perform payments, transfers, purchases, subscriptions, recharges or paid orders.")
             return
         }
 
-        // Resolve or invalidate a pending one-time approval before interpreting a new command.
         val pending = synchronized(pendingSendLock) { pendingSend }
         if (pending != null) {
             when {
-                isConfirmation(command) -> {
-                    resolvePendingSend(appContext, true)
-                    return
-                }
-                isCancellation(command) -> {
-                    resolvePendingSend(appContext, false)
-                    return
-                }
+                isConfirmation(command) -> { resolvePendingSend(appContext, true); return }
+                isCancellation(command) -> { resolvePendingSend(appContext, false); return }
                 else -> {
                     synchronized(pendingSendLock) { pendingSend = null }
                     ApprovalNotification.dismiss(appContext)
@@ -66,38 +55,27 @@ object NovaCommand {
         }
 
         val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val directIntent = understand(command, prefs.getString("last_app", null))
-
-        // Screen observation is a read-only request; expose the accessibility snapshot to voice.
-        if (directIntent.kind == "OBSERVE_SCREEN") {
+        val intent = understand(command, prefs.getString("last_app", null))
+        if (intent.kind == "OBSERVE_SCREEN") {
             val snapshot = NovaAccessibilityService.instance?.observeActiveScreen()
             val response = if (snapshot == null) {
-                "I can't access the current screen. Please enable Nova's Accessibility Service and keep the target app open."
+                "Enable Nova Accessibility and keep the app you want to inspect open."
             } else {
-                val packageName = snapshot.optString("package", "unknown app")
                 val nodes = snapshot.optJSONArray("nodes")
                 val visible = mutableListOf<String>()
-                if (nodes != null) {
-                    for (i in 0 until nodes.length()) {
-                        val node = nodes.optJSONObject(i) ?: continue
-                        val label = node.optString("text").ifBlank { node.optString("description") }.trim()
-                        if (label.isNotBlank() && label !in visible) visible.add(label)
-                        if (visible.size >= 12) break
-                    }
+                if (nodes != null) for (i in 0 until nodes.length()) {
+                    val node = nodes.optJSONObject(i) ?: continue
+                    val label = node.optString("text").ifBlank { node.optString("description") }.trim()
+                    if (label.isNotBlank() && label !in visible) visible.add(label)
+                    if (visible.size >= 12) break
                 }
-                if (visible.isEmpty()) "I can see the app ($packageName), but it isn't exposing readable screen text."
-                else "Here's what I can read on the current screen ($packageName): " + visible.joinToString(". ").take(900)
+                if (visible.isEmpty()) "The current app does not expose readable screen text."
+                else visible.joinToString(". ").take(900)
             }
             say(appContext, response)
             return
         }
-
-        // Typing is an ordinary action. Sending always needs fresh approval.
-        if (directIntent.kind == "TYPE_TEXT") {
-            executeIntent(appContext, directIntent)
-            return
-        }
-        if (directIntent.kind == "SEND") {
+        if (intent.kind == "SEND") {
             val snapshot = NovaAccessibilityService.instance?.currentSendContext()
             if (snapshot == null || snapshot.second.isBlank()) {
                 say(appContext, "I couldn't verify a message in the current text field. Nothing was sent.")
@@ -106,140 +84,25 @@ object NovaCommand {
             synchronized(pendingSendLock) {
                 pendingSend = PendingSend(snapshot.first, snapshot.second, System.currentTimeMillis() + SEND_CONFIRMATION_WINDOW_MS)
             }
-            ApprovalNotification.show(
-                appContext,
-                title = "Send this message?",
-                details = snapshot.second,
-                expiresInMillis = SEND_CONFIRMATION_WINDOW_MS
-            )
-            say(appContext, "I've shown an approval request. Tap Allow to send this exact message, or Deny to cancel.")
+            ApprovalNotification.show(appContext, "Send this message?", snapshot.second, SEND_CONFIRMATION_WINDOW_MS)
+            say(appContext, "Approve the exact message using the notification, or deny it.")
             return
         }
-        if (isCapabilityQuestion(command)) {
-            say(appContext, capabilityReply(appContext))
+        if (intent.kind == "UNKNOWN") {
+            scope.launch {
+                val history = conversationHistory(appContext, "")
+                val result = GroqApiClient.ask(appContext, command, history)
+                if (result.answer != null) {
+                    saveConversation(appContext, command, result.answer)
+                    say(appContext, result.answer)
+                } else {
+                    say(appContext, result.error ?: "Nova couldn't answer that right now.")
+                }
+            }
             return
         }
-
-        // Deterministic commands take precedence over AI interpretation.
-        if (directIntent.kind != "UNKNOWN" && directIntent.kind != "CONVERSATION") {
-            executeIntent(appContext, directIntent)
-            return
-        }
-        if (directIntent.kind == "CONVERSATION") {
-            say(appContext, directIntent.value.orEmpty())
-            return
-        }
-
-        // Keep the microphone responsive while AI thinks, but discard stale model results
-        // if a newer user utterance arrives before the previous request completes.
-        statusOnly(appContext, "Thinking…")
-        scope.launch {
-            processUnknownUtterance(appContext, original, requestId)
-        }
+        executeIntent(appContext, intent)
     }
-
-    private suspend fun processUnknownUtterance(context: Context, utterance: String, requestId: Long) {
-        val history = conversationHistory(context, utterance)
-        val cloudAvailable = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
-        val localAvailable = LocalAiManager.isDownloaded(context)
-
-        val plannerContext = buildPlannerContext(history, utterance)
-        val plannerPrompt = """
-            You are Nova, a safe Android voice assistant. Understand English, Tamil and Tanglish.
-            The user input includes recent conversation context and the current request. Use prior turns
-            to resolve follow-ups such as "why", "that one", "tell me more" and "do it again".
-            Infer the current user's intent and return exactly one JSON object:
-            {"action":"ACTION","target":"","reply":""}
-            Allowed actions:
-            OPEN_APP, SEARCH, WEB_SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN,
-            FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, CONVERSATION, UNSUPPORTED.
-            Use CONVERSATION for ordinary questions, explanations, calculations, jokes and casual chat.
-            For CONVERSATION, return an empty reply string. The conversation engine generates
-            the spoken answer separately using the full conversation history.
-            Use OPEN_APP only when the user clearly asks to open an installed app.
-            Use SEARCH or WEB_SEARCH only when the user clearly asks to search.
-            Use FOOD_SEARCH for requests to find food or nearby restaurants.
-            Use SEARCH_SWIGGY or SEARCH_ZOMATO only when the user names that service.
-            Never propose SEND, TYPE_TEXT, payments, transfers, purchases, subscriptions, recharges,
-            orders, deletion, publishing, security changes, calls or unsupported actions.
-            Never claim that an action has already happened. Do not invent live search results.
-            Preserve the user's language in the reply where practical. Ask one short question if essential
-            information is missing. Return JSON only, without markdown.
-        """.trimIndent()
-
-        var plannedIntent: BrainIntent? = null
-        if (cloudAvailable) {
-            val planned = AIProviderManager.plan(context, plannerPrompt, plannerContext)
-            if (planned.ok) plannedIntent = parseAiIntent(planned.message)
-        }
-        if (plannedIntent == null && localAvailable) {
-            val localPlan = LocalAiManager.interpret(context, plannerContext)
-            if (!localPlan.isNullOrBlank()) plannedIntent = parseAiIntent(localPlan)
-        }
-
-        if (requestSequence.get() != requestId) return
-
-        val safeAction = plannedIntent?.takeIf { isSafeModelAction(it.kind) }
-        if (safeAction != null && safeAction.kind != "CONVERSATION") {
-            withContext(Dispatchers.Main) {
-                if (requestSequence.get() == requestId) executeIntent(context, safeAction)
-            }
-            return
-        }
-
-        val answer = when {
-            plannedIntent?.kind == "CONVERSATION" && !plannedIntent.value.isNullOrBlank() ->
-                plannedIntent.value
-            cloudAvailable -> {
-                val result = AIProviderManager.chat(context, history)
-                if (result.ok) result.message
-                else if (localAvailable) LocalAiManager.chat(context, history.toString())
-                else null
-            }
-            localAvailable -> LocalAiManager.chat(context, history.toString())
-            else -> null
-        }
-
-        if (requestSequence.get() != requestId) return
-
-        val response = answer?.trim()?.takeIf { it.isNotBlank() } ?: when {
-            cloudAvailable -> "I couldn't reach the AI service just now. Please try again."
-            localAvailable -> "I couldn't generate a response with the local model. Please try again."
-            else -> "Natural conversation isn't configured yet. Connect Gemini or Groq, or install the local Qwen model."
-        }
-
-        saveConversation(context, utterance, response)
-        withContext(Dispatchers.Main) {
-            if (requestSequence.get() == requestId) say(context, response)
-        }
-    }
-
-    private fun buildPlannerContext(history: org.json.JSONArray, latest: String): String {
-        val previous = StringBuilder()
-        val end = (history.length() - 1).coerceAtLeast(0)
-        val start = (end - 4).coerceAtLeast(0)
-        for (index in start until end) {
-            val item = history.optJSONObject(index) ?: continue
-            val role = item.optString("role")
-            val content = item.optString("content").trim()
-            if ((role == "user" || role == "assistant") && content.isNotBlank()) {
-                previous.append(role).append(": ").append(content.take(150)).append("\n")
-            }
-        }
-        return buildString {
-            if (previous.isNotEmpty()) {
-                append("Recent conversation:\n")
-                append(previous)
-            }
-            append("Current user request: ")
-            append(latest.take(500))
-        }.takeLast(1200)
-    }
-
-    private fun isSafeModelAction(kind: String): Boolean = kind in setOf(
-        "OPEN_APP", "SEARCH", "WEB_SEARCH", "HOME", "BACK", "SETTINGS",
-        "SCROLL_UP", "SCROLL_DOWN", "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO"
-    )
 
     fun notifyApprovalUnavailable(context: Context) {
         say(context, "I couldn't display the Allow or Deny prompt. Please enable Nova notifications and try again. Nothing was sent.")
@@ -291,8 +154,8 @@ object NovaCommand {
         val stored = prefs.getString("conversation_history", null)
         val history = try { if (stored.isNullOrBlank()) org.json.JSONArray() else org.json.JSONArray(stored) }
             catch (_: Exception) { org.json.JSONArray() }
-        history.put(org.json.JSONObject().put("role", "user").put("content", latest.take(1600)))
-        while (history.length() > 12) history.remove(0)
+        // The API client appends the current prompt exactly once after this saved history.
+        while (history.length() > 10) history.remove(0)
         return history
     }
 
@@ -305,59 +168,6 @@ object NovaCommand {
         history.put(org.json.JSONObject().put("role", "assistant").put("content", answer.take(2400)))
         while (history.length() > 12) history.remove(0)
         prefs.edit().putString("conversation_history", history.toString()).apply()
-    }
-
-    private fun isCapabilityQuestion(text: String): Boolean = containsAny(
-        text,
-        "what can you do", "what all can you do", "what are your features", "your capabilities",
-        "what can nova do", "tell me your features", "how can you help me", "what do you support",
-        "நீ என்ன செய்ய முடியும்", "உன்னால என்ன செய்ய முடியும்", "என்னென்ன செய்ய முடியும்",
-        "நீ என்ன பண்ணுவ", "enna ellam panna mudiyum", "nee enna panna mudiyum",
-        "un features enna", "nova enna pannum"
-    )
-
-    private fun capabilityReply(context: Context): String {
-        val cloudReady = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
-        val localReady = LocalAiManager.isDownloaded(context)
-        val aiMode = when {
-            cloudReady && localReady -> "AI reasoning: Gemini/Groq with your downloaded Qwen model available as a local option."
-            cloudReady -> "AI reasoning: your configured Gemini/Groq connection."
-            localReady -> "AI reasoning: your downloaded Qwen model, which can work offline."
-            else -> "AI reasoning: not configured yet. Add a Gemini/Groq key or download the local Qwen model."
-        }
-        return """
-            I'm Nova. Here's what I can do right now:
-            • Understand requests in English, Tamil and Tanglish.
-            • Open installed apps and Android Settings; go Home or Back; scroll the screen.
-            • Search Google and open nearby food results in Maps, Swiggy or Zomato.
-            • Copy visible text and paste clipboard text when Nova Accessibility is enabled.
-            • Have AI-assisted conversations and plan supported actions. $aiMode
-
-            Safety: typing text is immediate. Sending a message requires a fresh, one-time approval for that exact visible message; approval expires and is never reused. Payments, money transfers, purchases, subscriptions, recharges and paid orders are permanently blocked. Other sensitive actions are not advertised until their specific workflow is implemented. Search handoffs open another app; I don't yet read and compare its live results automatically.
-            """.trimIndent()
-    }
-
-    private fun parseAiIntent(raw: String): BrainIntent? {
-        return try {
-            val first = raw.indexOf('{')
-            val last = raw.lastIndexOf('}')
-            if (first < 0 || last <= first) return null
-            val json = org.json.JSONObject(raw.substring(first, last + 1))
-            val action = json.optString("action", "UNSUPPORTED").uppercase(Locale.ROOT)
-            val target = json.optString("target").takeIf { it.isNotBlank() }
-            val reply = json.optString("reply").takeIf { it.isNotBlank() }
-            when (action) {
-                "OPEN_APP", "SEARCH", "HOME", "BACK", "SETTINGS", "SCROLL_UP",
-                "SCROLL_DOWN", "COPY_LAST_MESSAGE", "PASTE", "TYPE_TEXT", "SEND",
-                "FOOD_SEARCH", "SEARCH_SWIGGY", "SEARCH_ZOMATO", "WEB_SEARCH" -> BrainIntent(action, target)
-                "CONVERSATION" -> BrainIntent("CONVERSATION", reply)
-                "UNSUPPORTED", "SEND_MESSAGE", "PAYMENT", "DELETE" ->
-                    BrainIntent("CONVERSATION", reply ?: "I can't perform that action yet.")
-                else -> null
-            }
-        } catch (_: Exception) {
-            null
-        }
     }
 
     private fun executeIntent(context: Context, intent: BrainIntent) {
@@ -413,6 +223,12 @@ object NovaCommand {
                 if (query.isBlank()) say(context, "What should I search for?")
                 else { search(context, query); remember(context, intent.kind, query) }
             }
+            "YOUTUBE_SEARCH" -> {
+                val query = intent.value.orEmpty()
+                val opened = openYouTubeSearch(context, query)
+                say(context, if (opened) "Opening YouTube search results for $query." else "I couldn't open YouTube search. Please check whether YouTube or a browser is available.")
+                if (opened) remember(context, "YOUTUBE_SEARCH", query)
+            }
             "FOOD_SEARCH" -> {
                 val preference = intent.value?.takeIf { it.isNotBlank() } ?: "restaurants and food"
                 val opened = FoodDiscovery.findNearby(context, preference)
@@ -438,7 +254,8 @@ object NovaCommand {
         // Natural-language fallback for common goals when the local model returns invalid output.
         if (containsAny(t, "i am hungry", "i'm hungry", "im hungry", "hungry", "find food", "food nearby",
                 "nearby restaurants", "restaurants near me", "want to eat", "something to eat",
-                "pasikkuthu", "pasikuthu", "saapidanum", "சாப்பிடணும்", "பசிக்குது", "உணவு தேடு"))
+                "order biryani", "want biryani", "biryani", "pasikkuthu", "pasikuthu", "saapidanum",
+                "சாப்பிடணும்", "பசிக்குது", "உணவு தேடு"))
             return BrainIntent("FOOD_SEARCH")
         if (t.contains("swiggy")) return BrainIntent("SEARCH_SWIGGY", text)
         if (t.contains("zomato")) return BrainIntent("SEARCH_ZOMATO", text)
@@ -475,6 +292,16 @@ object NovaCommand {
             return BrainIntent("SCROLL_DOWN")
         if (containsAny(t, "scroll up", "மேலே போ", "mela scroll", "scroll mela"))
             return BrainIntent("SCROLL_UP")
+
+        // Compound YouTube requests must be split into app + query, not treated as one app name.
+        val youtubeSearch = Regex(
+            """^(?:please )?(?:open|launch)\s+(?:the\s+)?youtube(?:\s+app)?\s+and\s+(?:search(?:\s+for)?|look\s+for)\s+(.+)$""",
+            RegexOption.IGNORE_CASE
+        ).matchEntire(text.trim())
+        if (youtubeSearch != null) {
+            val query = youtubeSearch.groupValues[1].trim()
+            if (query.isNotBlank()) return BrainIntent("YOUTUBE_SEARCH", query)
+        }
 
         val searchPrefixes = listOf("search online for ", "search the web for ", "look up ", "find online ",
             "search for ", "search ", "google ")
@@ -517,18 +344,39 @@ object NovaCommand {
             .putString("last_action", action).putString("last_app", value).apply()
     }
 
+    private fun friendlyResponse(raw: String): String {
+        val value = raw.lowercase(Locale.ROOT)
+        return when {
+            value.contains("http 429") || value.contains("too many requests") ->
+                "The online research service is receiving too many requests right now. Please try again in a little while. You can continue chatting with me."
+            value.contains("http 503") || value.contains("http 502") || value.contains("http 504") ->
+                "The online research service is temporarily unavailable. Please try again shortly."
+            Regex("http\\s+\\d{3}").containsMatchIn(value) ->
+                "I couldn't complete the online research just now. Please try again in a moment."
+            value.contains("network") || value.contains("timeout") ->
+                "I couldn't connect to the online research service. Check your internet connection and try again."
+            else -> raw
+        }
+    }
+
     private fun statusOnly(context: Context, message: String) {
+        val safeMessage = friendlyResponse(message)
         context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
-            .putString("status", message).putBoolean("running", true).apply()
-        NovaOverlayService.status(context, message)
+            .putString("status", safeMessage).putBoolean("running", true).apply()
+        NovaOverlayService.status(context, safeMessage)
     }
 
     private fun say(context: Context, message: String) {
+        val safeMessage = friendlyResponse(message)
         context.getSharedPreferences("nova_diagnostics", Context.MODE_PRIVATE).edit()
-            .putString("status", message).putBoolean("running", true).apply()
-        NovaOverlayService.assistant(context, message)
-        NovaSpeech.speak(context, message)
-        // The main screen also displays status; speech output is handled by NovaSpeech.
+            .putString("status", safeMessage)
+            .putString("last_assistant_message", safeMessage)
+            .putLong("last_assistant_at", System.currentTimeMillis())
+            .putBoolean("running", true)
+            .apply()
+        NovaOverlayService.assistant(context, safeMessage)
+        NovaSpeech.speak(context, safeMessage)
+        // The main chat screen observes the saved response and renders it as a chat bubble.
     }
 
     private fun openApp(context: Context, label: String): Boolean {
@@ -543,6 +391,28 @@ object NovaCommand {
         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(launch)
         return true
+    }
+
+    private fun openYouTubeSearch(context: Context, query: String): Boolean {
+        if (query.isBlank()) return false
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW,
+                Uri.parse("https://www.youtube.com/results?search_query=" + Uri.encode(query)))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) { false }
+    }
+
+    private fun openResearchFallback(context: Context, query: String): Boolean {
+        if (query.isBlank()) return false
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW,
+                Uri.parse("https://www.google.com/search?q=" + Uri.encode(query)))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) { false }
     }
 
     private fun search(context: Context, query: String) {
