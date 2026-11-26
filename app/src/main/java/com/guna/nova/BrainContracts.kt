@@ -26,9 +26,25 @@ data class PlanStep(
     val id: String,
     val proposal: IntentProposal,
     val dependsOn: Set<String> = emptySet()
-)
+) {
+    init {
+        require(id.isNotBlank() && id.length <= 64) { "Plan step IDs must be non-empty and bounded." }
+        require(dependsOn.none { it == id }) { "A plan step cannot depend on itself." }
+    }
+}
 
 data class BrainPlan(val steps: List<PlanStep>) {
+    init {
+        require(steps.isNotEmpty()) { "A brain plan must contain at least one step." }
+        require(steps.size <= 8) { "A brain plan cannot contain more than eight steps." }
+        val seen = mutableSetOf<String>()
+        steps.forEach { step ->
+            require(step.id !in seen) { "Plan step IDs must be unique." }
+            require(step.dependsOn.all { it in seen }) { "Dependencies must refer to earlier plan steps." }
+            seen.add(step.id)
+        }
+    }
+
     companion object {
         fun single(proposal: IntentProposal): BrainPlan =
             BrainPlan(listOf(PlanStep(id = "step-1", proposal = proposal)))
@@ -67,8 +83,10 @@ object BrainContractParser {
         if (input.isEmpty() || input.length > 4096 || !input.startsWith("{") || !input.endsWith("}")) return null
         return try {
             val json = JSONObject(input)
-            val keys = json.keys()
-            while (keys.hasNext()) if (keys.next() !in allowedFields) return null
+            val keys = mutableSetOf<String>()
+            val iterator = json.keys()
+            while (iterator.hasNext()) keys.add(iterator.next())
+            if (keys != allowedFields) return null
 
             val actionValue = json.opt("action") as? String ?: return null
             val action = try {
@@ -77,9 +95,9 @@ object BrainContractParser {
                 return null
             }
 
-            val targetValue = if (json.has("target")) json.opt("target") as? String ?: return null else null
-            val replyValue = if (json.has("reply")) json.opt("reply") as? String ?: return null else null
-            if ((targetValue?.length ?: 0) > 500 || (replyValue?.length ?: 0) > 1200) return null
+            val targetValue = json.opt("target") as? String ?: return null
+            val replyValue = json.opt("reply") as? String ?: return null
+            if (targetValue.length > 500 || replyValue.length > 1200) return null
 
             val target = targetValue?.trim()?.takeIf { it.isNotEmpty() }
             val reply = replyValue?.trim()?.takeIf { it.isNotEmpty() }
