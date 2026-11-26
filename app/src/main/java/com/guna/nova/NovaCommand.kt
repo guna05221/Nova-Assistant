@@ -187,7 +187,10 @@ object NovaCommand {
             return
         }
 
-        val localAnswer = if (localAvailable) LocalAiManager.chat(context, history.toString()) else null
+        val hasPlannerReply = proposal?.action == NovaAction.CONVERSATION && !proposal?.reply.isNullOrBlank()
+        val localAnswer = if (!hasPlannerReply && localAvailable) {
+            LocalAiManager.chat(context, history.toString())
+        } else null
         val answer = when {
             proposal?.action == NovaAction.CONVERSATION && !proposal?.reply.isNullOrBlank() ->
                 proposal?.reply
