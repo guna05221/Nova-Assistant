@@ -30,7 +30,10 @@ class FinancialActionPolicyTest {
             "Place an order",
             "Order food",
             "Recharge my phone",
-            "Subscribe now"
+            "Subscribe now",
+            "I want to buy a phone",
+            "Please pay the electricity bill",
+            "Order a ticket for me"
         ).forEach { request ->
             assertTrue("Must deny: $request", FinancialActionPolicy.mustDeny(requestOrArguments = request))
         }
