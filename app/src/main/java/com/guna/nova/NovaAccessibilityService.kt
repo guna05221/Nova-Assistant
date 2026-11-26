@@ -12,7 +12,7 @@ import android.view.KeyEvent
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 
-internal data class VerifiedSendContext(
+data class VerifiedSendContext(
     val packageName: String,
     val recipient: String,
     val message: String
