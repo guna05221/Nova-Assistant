@@ -105,7 +105,7 @@ object NovaCommand {
 
     private suspend fun processUnknownUtterance(context: Context, utterance: String, requestId: Long) {
         val history = conversationHistory(context, utterance)
-        val cloudAvailable = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
+        val cloudAvailable = AIProviderManager.hasEnabledCloudProvider(context)
         val localAvailable = LocalAiManager.isDownloaded(context)
 
         val plannerContext = buildPlannerContext(history, utterance)
@@ -185,7 +185,8 @@ object NovaCommand {
         val response = answer?.trim()?.takeIf { it.isNotBlank() } ?: when {
             cloudAvailable -> "I couldn't reach the AI service just now. Please try again."
             localAvailable -> "I couldn't generate a response with the local model. Please try again."
-            else -> "Natural conversation isn't configured yet. Connect Gemini or Groq, or install the local Qwen model."
+            else -> if (AIProviderManager.isCloudEnabled(context)) "Natural conversation isn't configured yet. Connect a cloud provider or install the local Qwen model."
+                else "Cloud AI is disabled. Enable it in Nova settings or install the local Qwen model for natural conversation."
         }
 
         saveConversation(context, utterance, response)
@@ -252,13 +253,13 @@ object NovaCommand {
     )
 
     private fun capabilityReply(context: Context): String {
-        val cloudReady = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
+        val cloudReady = AIProviderManager.hasEnabledCloudProvider(context)
         val localReady = LocalAiManager.isDownloaded(context)
         val aiMode = when {
-            cloudReady && localReady -> "AI reasoning: Gemini/Groq with your downloaded Qwen model available as a local option."
-            cloudReady -> "AI reasoning: your configured Gemini/Groq connection."
+            cloudReady && localReady -> "AI reasoning: cloud AI is explicitly enabled, with your downloaded Qwen model available locally."
+            cloudReady -> "AI reasoning: your explicitly enabled cloud AI connection."
             localReady -> "AI reasoning: your downloaded Qwen model, which can work offline."
-            else -> "AI reasoning: not configured yet. Add a Gemini/Groq key or download the local Qwen model."
+            else -> "AI reasoning: cloud AI is disabled or not configured. Download local Qwen for offline reasoning, or enable cloud AI explicitly."
         }
         return """
             I'm Nova. Here's what I can do right now:
