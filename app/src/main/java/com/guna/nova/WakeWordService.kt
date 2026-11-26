@@ -115,7 +115,7 @@ class WakeWordService : Service() {
 
     private fun startSpeechRecognition() {
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            report("No speech recognition provider found. Enable Google's speech services.", false)
+            report("No speech recognition provider found. Enable a speech recognition service.", false)
             active = false; stopSelf(); return
         }
         try {
@@ -139,17 +139,21 @@ class WakeWordService : Service() {
                     recognitionActive = false
                     if (!active) return
                     val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
+                    val confidence = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)?.firstOrNull()
                     if (phrase.isNotBlank()) {
+                        val understood = SpeechUnderstanding.process(this@WakeWordService, phrase, confidence)
+                        val command = understood.transcript
                         val now = SystemClock.elapsedRealtime()
-                        val normalized = phrase.lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ").trim()
+                        val normalized = command.lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ").trim()
                         val isRecentEcho = normalized == lastHandledPhrase && now - lastHandledAt < 1200L
                         if (isRecentEcho) {
-                            Log.i(TAG, "Ignored repeated recognition within echo window: $phrase")
+                            Log.i(TAG, "Ignored repeated recognition within echo window: $command")
                         } else {
                             lastHandledPhrase = normalized
                             lastHandledAt = now
-                            report("Heard: $phrase")
-                            try { NovaCommand.execute(this@WakeWordService, phrase) }
+                            val correctionNote = if (understood.corrections.isEmpty()) "" else " (speech corrected)"
+                            report("Heard: $phrase$correctionNote")
+                            try { NovaCommand.execute(this@WakeWordService, command) }
                             catch (e: Exception) { Log.e(TAG, "Command failed", e); report("Command failed: ${e.message}") }
                         }
                     }
