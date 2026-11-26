@@ -6,10 +6,17 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.KeyEvent
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
+
+internal data class VerifiedSendContext(
+    val packageName: String,
+    val recipient: String,
+    val message: String
+)
 
 class NovaAccessibilityService : AccessibilityService() {
     companion object { var instance: NovaAccessibilityService? = null }
@@ -17,7 +24,21 @@ class NovaAccessibilityService : AccessibilityService() {
     private var volumeUpActivated = false
 
     override fun onServiceConnected() { instance = this }
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val changedPackage = event?.packageName?.toString() ?: return
+        if (changedPackage == packageName) return // Ignore Nova's own floating approval controls.
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ->
+                NovaCommand.invalidatePendingSendForPackage(this, changedPackage)
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED,
+            AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
+                val current = currentSendContext()
+                NovaCommand.invalidatePendingSendIfChanged(this, current)
+            }
+        }
+    }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode != KeyEvent.KEYCODE_VOLUME_UP) return super.onKeyEvent(event)
@@ -126,11 +147,82 @@ class NovaAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Clicks a visible, clearly labelled send/submit control in the foreground app.
-     * It never taps arbitrary coordinates or buttons with unrelated labels.
+     * Reads the foreground package, the app's visible conversation/header title, and
+     * the exact editable message. If the recipient cannot be identified unambiguously,
+     * the send workflow fails closed.
      */
-    fun clickSendButton(): Boolean {
+    fun currentSendContext(): VerifiedSendContext? {
+        val root = rootInActiveWindow ?: return null
+        val targetPackage = root.packageName?.toString()?.takeIf { it.isNotBlank() } ?: return null
+        val focused = root.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)
+        val editable = if (focused?.isEditable == true) focused else {
+            var found: android.view.accessibility.AccessibilityNodeInfo? = null
+            fun find(node: android.view.accessibility.AccessibilityNodeInfo?) {
+                if (node == null || found != null || !node.isVisibleToUser || !node.isEnabled) return
+                if (node.isEditable) { found = node; return }
+                for (i in 0 until node.childCount) find(node.getChild(i))
+            }
+            find(root)
+            found
+        } ?: return null
+        val message = editable.text?.toString().orEmpty()
+        if (message.isBlank()) return null
+        val recipient = findVisibleRecipientTitle(root) ?: return null
+        return VerifiedSendContext(targetPackage, recipient, message)
+    }
+
+    private fun findVisibleRecipientTitle(
+        root: android.view.accessibility.AccessibilityNodeInfo
+    ): String? {
+        val screenHeight = resources.displayMetrics.heightPixels
+        val headerBottom = (screenHeight * 0.14f).toInt()
+        val titleHints = listOf("conversation_contact", "contact_name", "chat_title", "toolbar_title", "conversation_title")
+        val ignored = setOf("online", "typing", "last seen", "last seen today", "tap here", "search")
+        val hinted = linkedSetOf<String>()
+        val topCandidates = linkedSetOf<String>()
+
+        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (node == null || !node.isVisibleToUser) return
+            val value = node.text?.toString()?.trim().orEmpty()
+            if (value.length in 2..80 && value.lowercase() !in ignored && !node.isEditable) {
+                val bounds = Rect()
+                node.getBoundsInScreen(bounds)
+                if (bounds.top >= (screenHeight * 0.015f).toInt() && bounds.bottom <= headerBottom) {
+                    topCandidates.add(value)
+                    val viewId = node.viewIdResourceName?.lowercase().orEmpty()
+                    if (titleHints.any { viewId.contains(it) }) hinted.add(value)
+                }
+            }
+            for (i in 0 until node.childCount) collect(node.getChild(i))
+        }
+        collect(root)
+        return when {
+            hinted.size == 1 -> hinted.first()
+            hinted.size > 1 -> null
+            topCandidates.size == 1 -> topCandidates.first()
+            else -> null
+        }
+    }
+
+    /**
+     * Re-reads and compares the exact package, visible recipient title and message
+     * immediately before clicking a clearly labelled Send control.
+     */
+    fun clickSendButton(
+        expectedPackage: String,
+        expectedRecipient: String,
+        expectedMessage: String,
+        expectedDigest: String
+    ): Boolean {
         val root = rootInActiveWindow ?: return false
+        if (root.packageName?.toString() != expectedPackage) return false
+        val current = currentSendContext() ?: return false
+        if (current.packageName != expectedPackage ||
+            current.recipient != expectedRecipient ||
+            current.message != expectedMessage ||
+            NovaCommand.sendSnapshotDigest(current) != expectedDigest
+        ) return false
+
         val candidates = mutableListOf<android.view.accessibility.AccessibilityNodeInfo>()
         fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
             if (node == null || !node.isVisibleToUser) return
