@@ -36,6 +36,7 @@ class NovaOverlayService : Service() {
         const val EXTRA_TEXT = "text"
         const val EXTRA_LEVEL = "level"
         @Volatile var chatScreenVisible: Boolean = false
+        @Volatile private var activeService: NovaOverlayService? = null
 
         fun show(context: android.content.Context) = send(context, ACTION_SHOW)
         fun hide(context: android.content.Context) = send(context, ACTION_HIDE)
@@ -44,9 +45,8 @@ class NovaOverlayService : Service() {
         fun assistant(context: android.content.Context, text: String) = send(context, ACTION_ASSISTANT, text)
         fun status(context: android.content.Context, text: String) = send(context, ACTION_STATUS, text)
         fun audioLevel(context: android.content.Context, level: Float) {
-            val intent = Intent(context, NovaOverlayService::class.java)
-                .setAction(ACTION_AUDIO_LEVEL).putExtra(EXTRA_LEVEL, level)
-            try { context.startService(intent) } catch (_: Exception) { }
+            // RMS callbacks arrive frequently; update the existing view directly.
+            activeService?.updateAudioLevel(level)
         }
 
         private fun send(context: android.content.Context, action: String, text: String? = null) {
@@ -67,7 +67,13 @@ class NovaOverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeService = this
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+    }
+
+    private fun updateAudioLevel(level: Float) {
+        if (panel == null && !chatScreenVisible) showPanel()
+        orbView?.setAudioLevel(level)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -282,6 +288,7 @@ class NovaOverlayService : Service() {
 
     override fun onDestroy() {
         removePanel()
+        if (activeService === this) activeService = null
         super.onDestroy()
     }
 
