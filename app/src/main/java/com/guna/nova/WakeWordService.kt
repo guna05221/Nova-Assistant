@@ -128,90 +128,153 @@ class WakeWordService : Service() {
     }
 
     private fun startSpeechRecognition() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            report("No speech recognition provider found. Enable a speech recognition service.", false)
-            active = false; stopSelf(); return
-        }
-        try {
-            recognizer = if (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(this))
-                SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
-            else SpeechRecognizer.createSpeechRecognizer(this)
-            recognizer?.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    recognitionActive = true
-                    val status = if (identity?.isAvailable == true) {
-                        "Listening for Tamil, English and Tanglish. Speak naturally."
-                    } else {
-                        "Listening for Tamil, English and Tanglish. Speaker verification is unavailable because its local model is missing."
-                    }
-                    report(status)
+        Thread({
+            try {
+                val loaded = kotlinx.coroutines.runBlocking {
+                    ParakeetAsrManager.loadIfInstalled(this@WakeWordService)
                 }
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {}
-                override fun onPartialResults(partialResults: Bundle?) {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-                override fun onError(error: Int) {
-                    recognitionActive = false
-                    if (active && !speechPaused) handler.postDelayed({ listenAgain() },
-                        if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1200L else 500L)
+                if (!loaded) {
+                    report("Parakeet Unified EN 0.6B is not installed. Open Nova and download the local voice model first.", false)
+                    active = false
+                    stopSelf()
+                    return@Thread
                 }
-                override fun onResults(results: Bundle?) {
-                    recognitionActive = false
-                    if (!active) return
-                    val phrase = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.trim().orEmpty()
-                    val confidence = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)?.firstOrNull()
-                    if (phrase.isNotBlank()) {
-                        val understood = SpeechUnderstanding.process(this@WakeWordService, phrase, confidence)
-                        val command = understood.transcript
-                        val now = SystemClock.elapsedRealtime()
-                        val normalized = command.lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ").trim()
-                        val isRecentEcho = normalized == lastHandledPhrase && now - lastHandledAt < 1200L
-                        if (isRecentEcho) {
-                            Log.i(TAG, "Ignored repeated recognition within echo window: $command")
-                        } else {
-                            lastHandledPhrase = normalized
-                            lastHandledAt = now
-                            val correctionNote = if (understood.corrections.isEmpty()) "" else " (speech corrected)"
-                            report("Heard: $phrase$correctionNote")
-                            try { NovaCommand.execute(this@WakeWordService, command) }
-                            catch (e: Exception) { Log.e(TAG, "Command failed", e); report("Command failed: ${e.message}") }
-                        }
-                    }
-                    if (!speechPaused) handler.postDelayed({ listenAgain() }, 350L)
-                }
-            })
-            listenAgain()
-        } catch (e: Exception) {
-            Log.e(TAG, "Recognizer start failed", e); report("Speech recognition failed: ${e.message}", false)
-            active = false; stopSelf()
-        }
+                captureWithParakeet()
+            } catch (e: Exception) {
+                Log.e(TAG, "Parakeet startup failed", e)
+                report("Parakeet startup failed: ${e.message ?: e.javaClass.simpleName}", false)
+                active = false
+                stopSelf()
+            }
+        }, "NovaParakeetStartup").start()
     }
 
-    private fun listenAgain() {
-        if (!active || speechPaused || recognitionActive) return
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-IN")
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "en-IN")
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
-            if (Build.VERSION.SDK_INT >= 34) {
-                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_DETECTION, true)
-                putExtra(RecognizerIntent.EXTRA_ENABLE_LANGUAGE_SWITCH, RecognizerIntent.LANGUAGE_SWITCH_BALANCED)
-                putStringArrayListExtra(RecognizerIntent.EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES, arrayListOf("ta-IN", "en-IN"))
-                putStringArrayListExtra(RecognizerIntent.EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES, arrayListOf("ta-IN", "en-IN"))
-            }
+    private fun updateTranscript(text: String, final: Boolean = false) {
+        getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
+            .putString(if (final) "finalTranscript" else "liveTranscript", text)
+            .putString("asrEngine", "Parakeet Unified EN 0.6B INT8 · local")
+            .apply()
+    }
+
+    /**
+     * Parakeet Unified's published Sherpa ONNX export is offline-only.
+     * We emulate live transcription by decoding snapshots of the current utterance,
+     * then decode once more when VAD detects the end of speech.
+     */
+    private fun captureWithParakeet() {
+        val minBuffer = AudioRecord.getMinBufferSize(
+            RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minBuffer <= 0) error("AudioRecord returned invalid buffer size")
+        val audio = AudioRecord(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            maxOf(minBuffer * 3, RATE * 2)
+        )
+        if (audio.state != AudioRecord.STATE_INITIALIZED) {
+            audio.release()
+            error("Could not initialize microphone")
         }
+        recorder = audio
+        val frame = ShortArray(1600)
+        val utterance = ArrayList<Float>(RATE * 12)
+        var speaking = false
+        var silenceMs = 0L
+        var speechMs = 0L
+        var lastPartialAt = 0L
+        val silenceThreshold = 0.012
+        val endSilenceMs = 700L
+        val partialIntervalMs = 2500L
+        val maxUtteranceMs = 25000L
+
         try {
+            audio.startRecording()
             recognitionActive = true
-            recognizer?.startListening(intent)
-        } catch (e: Exception) {
+            report("Listening with Parakeet Unified EN 0.6B — offline English")
+            updateTranscript("")
+            while (active && !speechPaused) {
+                val count = audio.read(frame, 0, frame.size)
+                if (count <= 0) {
+                    if (count < 0) Log.w(TAG, "AudioRecord read error: $count")
+                    continue
+                }
+                var energy = 0.0
+                for (i in 0 until count) {
+                    val sample = frame[i].toFloat() / 32768f
+                    energy += sample * sample
+                }
+                val rms = kotlin.math.sqrt(energy / count)
+                val frameMs = count * 1000L / RATE
+
+                if (rms >= silenceThreshold) {
+                    speaking = true
+                    silenceMs = 0L
+                    speechMs += frameMs
+                    for (i in 0 until count) utterance.add(frame[i] / 32768f)
+                } else if (speaking) {
+                    silenceMs += frameMs
+                    for (i in 0 until count) utterance.add(frame[i] / 32768f)
+                }
+
+                val now = SystemClock.elapsedRealtime()
+                if (speaking && speechMs >= 700L && now - lastPartialAt >= partialIntervalMs) {
+                    lastPartialAt = now
+                    val snapshot = utterance.toFloatArray()
+                    try {
+                        val partial = kotlinx.coroutines.runBlocking {
+                            ParakeetAsrManager.transcribe(snapshot)
+                        }
+                        if (partial.isNotBlank()) {
+                            updateTranscript(partial)
+                            report("Live transcript updated")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Interim transcription failed", e)
+                    }
+                }
+
+                if (speaking && ((silenceMs >= endSilenceMs && speechMs >= 300L) || speechMs >= maxUtteranceMs)) {
+                    val samples = utterance.toFloatArray()
+                    try {
+                        val phrase = kotlinx.coroutines.runBlocking {
+                            ParakeetAsrManager.transcribe(samples)
+                        }
+                        if (phrase.isNotBlank()) {
+                            val understood = SpeechUnderstanding.process(this, phrase, null)
+                            val command = understood.transcript
+                            updateTranscript(phrase, final = true)
+                            report("Heard: $phrase")
+                            val nowElapsed = SystemClock.elapsedRealtime()
+                            val normalized = command.lowercase(java.util.Locale.ROOT)
+                                .replace(Regex("\\s+"), " ").trim()
+                            val repeated = normalized == lastHandledPhrase && nowElapsed - lastHandledAt < 1200L
+                            if (!repeated) {
+                                lastHandledPhrase = normalized
+                                lastHandledAt = nowElapsed
+                                NovaCommand.execute(this, command)
+                            }
+                        } else {
+                            updateTranscript("(No speech recognized)", final = true)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Final transcription failed", e)
+                        report("Transcription failed: ${e.message}", false)
+                    }
+                    utterance.clear()
+                    speaking = false
+                    silenceMs = 0L
+                    speechMs = 0L
+                    lastPartialAt = 0L
+                    updateTranscript("")
+                }
+            }
+        } finally {
             recognitionActive = false
-            Log.w(TAG, "startListening retry", e)
-            handler.postDelayed({ listenAgain() }, 1000L)
+            try { if (audio.recordingState == AudioRecord.RECORDSTATE_RECORDING) audio.stop() } catch (_: Exception) {}
+            audio.release()
+            recorder = null
         }
     }
 
