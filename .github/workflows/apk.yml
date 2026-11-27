@@ -34,7 +34,11 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
           test -x "$SDKMANAGER"
+          # sdkmanager closes the input pipe after accepting all licenses; avoid
+          # treating the resulting harmless yes(1) SIGPIPE as a pipeline failure.
+          set +o pipefail
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses
+          set -o pipefail
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       - name: Download Sherpa ONNX dependency
