@@ -194,7 +194,11 @@ class WakeWordService : Service() {
             recognitionActive = true
             report("Listening with Parakeet Unified EN 0.6B — offline English")
             updateTranscript("")
-            while (active && !speechPaused) {
+            while (active) {
+                if (speechPaused) {
+                    audio.read(frame, 0, frame.size)
+                    continue
+                }
                 val count = audio.read(frame, 0, frame.size)
                 if (count <= 0) {
                     if (count < 0) Log.w(TAG, "AudioRecord read error: $count")
@@ -290,8 +294,8 @@ class WakeWordService : Service() {
         handler.postDelayed({
             if (active) {
                 speechPaused = false
-                recognitionActive = false
-                listenAgain()
+                recognitionActive = true
+                report("Listening with Parakeet Unified EN 0.6B — offline English")
             }
         }, 500L)
     }
@@ -305,6 +309,7 @@ class WakeWordService : Service() {
         try { recorder?.stop() } catch (_: Exception) {}
         recorder?.release(); recorder = null
         identity?.close(); identity = null
+        ParakeetAsrManager.release()
         getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
             .putBoolean("running", false).putString("status", "Listening stopped.").apply()
         stopForeground(STOP_FOREGROUND_REMOVE)
