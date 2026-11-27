@@ -198,36 +198,15 @@ object NovaCommand {
             return
         }
 
-        // Multi-step proposals are review-only until a later executor can verify each
-        // result before starting dependent steps. No proposed step is dispatched here.
-        val multiStepPlan = plan
-        if (multiStepPlan != null && multiStepPlan.steps.size > 1) {
-            val summary = buildString {
-                append("I prepared this plan, but multi-step execution is not enabled yet. Nothing has been executed:\n")
-                multiStepPlan.steps.forEachIndexed { index, planStep ->
-                    val actionLabel = when (planStep.proposal.action) {
-                        NovaAction.OPEN_APP -> "Open"
-                        NovaAction.SEARCH, NovaAction.WEB_SEARCH -> "Search for"
-                        NovaAction.FOOD_SEARCH -> "Find food:"
-                        NovaAction.SEARCH_SWIGGY -> "Search Swiggy for"
-                        NovaAction.SEARCH_ZOMATO -> "Search Zomato for"
-                        NovaAction.HOME -> "Go Home"
-                        NovaAction.BACK -> "Go Back"
-                        NovaAction.SETTINGS -> "Open Settings"
-                        NovaAction.SCROLL_UP -> "Scroll up"
-                        NovaAction.SCROLL_DOWN -> "Scroll down"
-                        NovaAction.CONVERSATION -> "Respond to the question"
-                        else -> "Review"
-                    }
-                    append(index + 1).append(". ").append(actionLabel)
-                    planStep.proposal.target?.let { append(" ").append(it) }
-                    if (planStep.dependsOn.isNotEmpty()) append(" (after ").append(planStep.dependsOn.joinToString()).append(")")
-                    append("\n")
-                }
-            }.trim()
-            saveConversation(context, utterance, summary)
+        // All model-proposed Android actions use the trusted sequential executor.
+        // Conversation-only plans remain responses and never reach Android APIs.
+        val executablePlan = plan
+        if (executablePlan != null && executablePlan.steps.any { it.proposal.action != NovaAction.CONVERSATION }) {
             withContext(Dispatchers.Main) {
-                if (requestSequence.get() == requestId) say(context, summary)
+                if (requestSequence.get() == requestId) {
+                    val report = executeModelPlan(context, executablePlan, utterance)
+                    say(context, report.summary)
+                }
             }
             return
         }
@@ -235,18 +214,6 @@ object NovaCommand {
         val step = plan?.steps?.singleOrNull()
         val decision = decisions.singleOrNull()
         val proposal = step?.proposal
-
-        if (step != null && decision?.outcome == PolicyOutcome.ALLOW &&
-            step.proposal.action != NovaAction.CONVERSATION
-        ) {
-            withContext(Dispatchers.Main) {
-                if (requestSequence.get() == requestId) {
-                    val result = executeModelStep(context, step, utterance)
-                    if (result.status != ExecutionStatus.DISPATCHED) say(context, result.summary)
-                }
-            }
-            return
-        }
 
         val hasPlannerReply = proposal?.action == NovaAction.CONVERSATION && !proposal.reply.isNullOrBlank()
         val localAnswer = if (!hasPlannerReply && localAvailable) {
@@ -300,35 +267,87 @@ object NovaCommand {
         }
 
     /**
-     * Final model-plan boundary. Re-evaluate policy immediately before handing a
-     * typed, allow-listed proposal to the existing Android executor.
+     * Trusted Android-side plan boundary. The engine preflights every step, then
+     * re-checks financial policy immediately before each side effect.
      */
-    private fun executeModelStep(context: Context, step: PlanStep, originalRequest: String): ExecutionResult {
-        val decision = BrainPolicy.evaluate(step, originalRequest)
-        if (decision.outcome != PolicyOutcome.ALLOW) {
-            return ExecutionResult(step.id, ExecutionStatus.REJECTED, decision.reasonCode,
-                "Nova blocked this proposed action.")
-        }
-        if (FinancialActionPolicy.mustDeny(
-                capability = step.proposal.action.name,
-                requestOrArguments = listOfNotNull(originalRequest, step.proposal.target, step.proposal.reply).joinToString(" ")
-            )
-        ) {
-            return ExecutionResult(step.id, ExecutionStatus.REJECTED, "PERMANENT_FINANCIAL_DENY",
-                "Nova permanently blocks financial transactions and paid orders.")
-        }
+    private fun executeModelPlan(context: Context, plan: BrainPlan, originalRequest: String): PlanExecutionReport {
+        val report = BrainExecutionEngine.execute(
+            plan = plan,
+            originalRequest = originalRequest,
+            dispatcher = { step -> dispatchVerifiedModelStep(context, step, originalRequest) },
+            onProgress = { progress ->
+                val serialized = org.json.JSONArray().apply {
+                    progress.steps.forEach { item ->
+                        put(org.json.JSONObject().put("step_id", item.stepId)
+                            .put("status", item.state.name).put("reason", item.reasonCode))
+                    }
+                }
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                    .putString("last_plan_execution_id", progress.executionId)
+                    .putString("last_plan_progress", serialized.toString())
+                    .apply()
+                val completed = progress.steps.count { it.state == PlanStepState.COMPLETED }
+                val runningIndex = progress.steps.indexOfFirst { it.state == PlanStepState.RUNNING }
+                val status = if (runningIndex >= 0) "Step ${runningIndex + 1}/${progress.steps.size}: running"
+                    else "Plan progress: $completed/${progress.steps.size} completed"
+                statusOnly(context, status)
+                NovaOverlayService.status(context, status)
+            }
+        )
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString("last_plan_state", if (report.success) "COMPLETED" else "STOPPED")
+            .putString("last_plan_summary", report.summary)
+            .apply()
+        return report
+    }
 
-        val action = when (step.proposal.action) {
-            NovaAction.OPEN_APP, NovaAction.SEARCH, NovaAction.WEB_SEARCH, NovaAction.HOME,
-            NovaAction.BACK, NovaAction.SETTINGS, NovaAction.SCROLL_UP, NovaAction.SCROLL_DOWN,
-            NovaAction.FOOD_SEARCH, NovaAction.SEARCH_SWIGGY, NovaAction.SEARCH_ZOMATO ->
-                step.proposal.action.name
-            else -> return ExecutionResult(step.id, ExecutionStatus.REJECTED, "ACTION_NOT_EXECUTABLE",
-                "This proposed action cannot be sent to the Android executor.")
+    /**
+     * Only this trusted adapter can dispatch model-plan actions. Verification means
+     * the Android API accepted the operation; it does not imply remote app/network completion.
+     */
+    private fun dispatchVerifiedModelStep(context: Context, step: PlanStep, originalRequest: String): StepVerification {
+        val proposal = step.proposal
+        if (FinancialActionPolicy.mustDeny(
+                capability = proposal.action.name,
+                requestOrArguments = listOfNotNull(originalRequest, proposal.target, proposal.reply).joinToString(" ")
+            )
+        ) return StepVerification.failed("PERMANENT_FINANCIAL_DENY", "Financial actions are permanently blocked.")
+
+        val target = proposal.target.orEmpty()
+        val accepted = try {
+            when (proposal.action) {
+                NovaAction.OPEN_APP -> target.isNotBlank() && openApp(context, target)
+                NovaAction.SEARCH, NovaAction.WEB_SEARCH -> target.isNotBlank() && search(context, target)
+                NovaAction.HOME -> {
+                    val service = NovaAccessibilityService.instance
+                    if (service != null) service.home() else {
+                        context.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        true
+                    }
+                }
+                NovaAction.BACK -> NovaAccessibilityService.instance?.back() == true
+                NovaAction.SETTINGS -> {
+                    context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    true
+                }
+                NovaAction.SCROLL_UP -> NovaAccessibilityService.instance?.scroll(true) == true
+                NovaAction.SCROLL_DOWN -> NovaAccessibilityService.instance?.scroll(false) == true
+                NovaAction.FOOD_SEARCH -> FoodDiscovery.findNearby(context, target.ifBlank { "restaurants and food" })
+                NovaAction.SEARCH_SWIGGY -> FoodDiscovery.searchDeliveryApp(context, "Swiggy", target)
+                NovaAction.SEARCH_ZOMATO -> FoodDiscovery.searchDeliveryApp(context, "Zomato", target)
+                NovaAction.CONVERSATION -> false
+                else -> false
+            }
+        } catch (_: Exception) { false }
+
+        if (!accepted) {
+            val reason = if (proposal.action == NovaAction.CONVERSATION) "NON_EXECUTABLE_CONVERSATION_STEP"
+                else "ANDROID_OPERATION_NOT_ACCEPTED"
+            return StepVerification.failed(reason, "Android did not accept this operation; the plan was stopped.")
         }
-        executeIntent(context, BrainIntent(action, step.proposal.target))
-        return ExecutionResult(step.id, ExecutionStatus.DISPATCHED, "ANDROID_EXECUTOR_DISPATCHED",
-            "The action was handed to Android. Its final outcome has not yet been independently verified.")
+        remember(context, proposal.action.name, proposal.target)
+        return StepVerification.verified("ANDROID_API_ACCEPTED", "Android accepted the operation at its API boundary.")
     }
 
     private fun conversationHistory(context: Context, latest: String): org.json.JSONArray {
@@ -710,10 +729,13 @@ object NovaCommand {
         return true
     }
 
-    private fun search(context: Context, query: String) {
-        if (query.isBlank()) return
-        context.startActivity(Intent(Intent.ACTION_VIEW,
-            Uri.parse("https://www.google.com/search?q=" + Uri.encode(query)))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    private fun search(context: Context, query: String): Boolean {
+        if (query.isBlank()) return false
+        return try {
+            context.startActivity(Intent(Intent.ACTION_VIEW,
+                Uri.parse("https://www.google.com/search?q=" + Uri.encode(query)))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            true
+        } catch (_: Exception) { false }
     }
 }

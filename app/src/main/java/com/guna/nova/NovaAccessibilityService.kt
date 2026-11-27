@@ -244,9 +244,14 @@ class NovaAccessibilityService : AccessibilityService() {
         return target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
     }
 
-    fun back() { performGlobalAction(GLOBAL_ACTION_BACK) }
-    fun home() { performGlobalAction(GLOBAL_ACTION_HOME) }
-    fun scroll(up: Boolean) {
+    /** Returns whether Android accepted the global navigation action. */
+    fun back(): Boolean = performGlobalAction(GLOBAL_ACTION_BACK)
+
+    /** Returns whether Android accepted the global navigation action. */
+    fun home(): Boolean = performGlobalAction(GLOBAL_ACTION_HOME)
+
+    /** Returns whether Accessibility accepted the gesture for dispatch. */
+    fun scroll(up: Boolean): Boolean {
         val x = resources.displayMetrics.widthPixels * 0.5f
         val h = resources.displayMetrics.heightPixels.toFloat()
         val path = Path().apply {
@@ -255,6 +260,6 @@ class NovaAccessibilityService : AccessibilityService() {
         }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 450)).build()
-        dispatchGesture(gesture, null, null)
+        return dispatchGesture(gesture, null, null)
     }
 }
