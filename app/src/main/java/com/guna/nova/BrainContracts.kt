@@ -53,28 +53,10 @@ data class BrainPlan(val steps: List<PlanStep>) {
 
 enum class PolicyOutcome { ALLOW, DENY, REQUIRE_APPROVAL, CLARIFY }
 
-data class PolicyDecision(
-    val outcome: PolicyOutcome,
-    val reasonCode: String,
-    val stepId: String
-)
-
+data class PolicyDecision(val outcome: PolicyOutcome, val reasonCode: String, val stepId: String)
 enum class ExecutionStatus { DISPATCHED, REJECTED, NOT_EXECUTED }
+data class ExecutionResult(val stepId: String, val status: ExecutionStatus, val reasonCode: String, val summary: String)
 
-data class ExecutionResult(
-    val stepId: String,
-    val status: ExecutionStatus,
-    val reasonCode: String,
-    val summary: String
-)
-
-/**
- * Strict parser for the current compact model contract:
- * {"action":"ACTION","target":"","reply":""}
- *
- * It rejects markdown wrappers, malformed JSON, unknown fields, wrong field types,
- * oversized values and actions that are not part of the typed model vocabulary.
- */
 object BrainContractParser {
     private val allowedFields = setOf("action", "target", "reply")
 
@@ -87,27 +69,19 @@ object BrainContractParser {
             val iterator = json.keys()
             while (iterator.hasNext()) keys.add(iterator.next())
             if (keys != allowedFields) return null
-
             val actionValue = json.opt("action") as? String ?: return null
             val action = try {
                 NovaAction.valueOf(actionValue.trim().uppercase(Locale.ROOT))
-            } catch (_: IllegalArgumentException) {
-                return null
-            }
-
+            } catch (_: IllegalArgumentException) { return null }
             val targetValue = json.opt("target") as? String ?: return null
             val replyValue = json.opt("reply") as? String ?: return null
             if (targetValue.length > 500 || replyValue.length > 1200) return null
-
-            val target = targetValue?.trim()?.takeIf { it.isNotEmpty() }
-            val reply = replyValue?.trim()?.takeIf { it.isNotEmpty() }
+            val target = targetValue.trim().takeIf { it.isNotEmpty() }
+            val reply = replyValue.trim().takeIf { it.isNotEmpty() }
             if (action == NovaAction.CONVERSATION && target != null) return null
             if (action != NovaAction.CONVERSATION && reply != null) return null
-
-            IntentProposal(action = action, target = target, reply = reply, source = source)
-        } catch (_: Exception) {
-            null
-        }
+            IntentProposal(action, target, reply, source)
+        } catch (_: Exception) { null }
     }
 }
 
@@ -127,17 +101,16 @@ object BrainPolicy {
                 requestOrArguments = listOfNotNull(originalRequest, proposal.target, proposal.reply).joinToString(" ")
             )
         ) return PolicyDecision(PolicyOutcome.DENY, "PERMANENT_FINANCIAL_DENY", step.id)
-
-        if (proposal.action == NovaAction.UNSUPPORTED) {
-            return PolicyDecision(PolicyOutcome.CLARIFY, "UNSUPPORTED_ACTION", step.id)
-        }
-        if (proposal.action !in executableModelActions) {
-            return PolicyDecision(PolicyOutcome.DENY, "ACTION_NOT_MODEL_EXECUTABLE", step.id)
-        }
+        if (proposal.action == NovaAction.UNSUPPORTED) return PolicyDecision(PolicyOutcome.CLARIFY, "UNSUPPORTED_ACTION", step.id)
+        if (proposal.action !in executableModelActions) return PolicyDecision(PolicyOutcome.DENY, "ACTION_NOT_MODEL_EXECUTABLE", step.id)
         if (proposal.action in setOf(NovaAction.OPEN_APP, NovaAction.SEARCH, NovaAction.WEB_SEARCH,
                 NovaAction.SEARCH_SWIGGY, NovaAction.SEARCH_ZOMATO) && proposal.target.isNullOrBlank()) {
             return PolicyDecision(PolicyOutcome.CLARIFY, "MISSING_ACTION_TARGET", step.id)
         }
         return PolicyDecision(PolicyOutcome.ALLOW, "MODEL_ACTION_ALLOWLIST", step.id)
     }
+
+    /** Every proposed step is checked; no plan-level approval can override a denied step. */
+    fun evaluatePlan(plan: BrainPlan, originalRequest: String): List<PolicyDecision> =
+        plan.steps.map { evaluate(it, originalRequest) }
 }
