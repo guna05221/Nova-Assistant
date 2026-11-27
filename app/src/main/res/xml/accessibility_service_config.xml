@@ -1,6 +1,6 @@
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/accessibility_description"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeViewClicked|typeViewTextChanged|typeWindowContentChanged|typeViewFocused"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeViewClicked|typeViewTextChanged|typeWindowContentChanged|typeViewFocused|typeViewScrolled"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:canPerformGestures="true"
     android:canRequestFilterKeyEvents="true"

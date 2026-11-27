@@ -19,15 +19,29 @@ data class VerifiedSendContext(
 )
 
 class NovaAccessibilityService : AccessibilityService() {
-    companion object { var instance: NovaAccessibilityService? = null }
+    companion object { @Volatile var instance: NovaAccessibilityService? = null }
     private var volumeUpDownAt = 0L
     private var volumeUpActivated = false
+    private val observationLock = Any()
+    private var observationSequence = 0L
+    @Volatile private var latestObservation = AccessibilityObservation()
 
-    override fun onServiceConnected() { instance = this }
+    override fun onServiceConnected() {
+        instance = this
+        recordObservation(AccessibilitySignal.OTHER)
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val changedPackage = event?.packageName?.toString() ?: return
-        if (changedPackage == packageName) return // Ignore Nova's own floating approval controls.
+        if (changedPackage == packageName) return
+        val signal = when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> AccessibilitySignal.WINDOW_STATE
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> AccessibilitySignal.WINDOW_CONTENT
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> AccessibilitySignal.VIEW_SCROLLED
+            else -> AccessibilitySignal.OTHER
+        }
+        recordObservation(signal, changedPackage)
+
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED ->
                 NovaCommand.invalidatePendingSendForPackage(this, changedPackage)
@@ -38,6 +52,71 @@ class NovaAccessibilityService : AccessibilityService() {
                 NovaCommand.invalidatePendingSendIfChanged(this, current)
             }
         }
+    }
+
+    private fun recordObservation(signal: AccessibilitySignal, eventPackage: String = "") {
+        val root = rootInActiveWindow
+        val foregroundPackage = root?.packageName?.toString()?.takeIf { it.isNotBlank() } ?: eventPackage
+        val className = root?.className?.toString().orEmpty()
+        val visibleText = StringBuilder()
+        var visited = 0
+        fun collect(node: android.view.accessibility.AccessibilityNodeInfo?) {
+            if (node == null || visited >= 80 || visibleText.length >= 3500 || !node.isVisibleToUser) return
+            visited++
+            if (!node.isPassword && !node.isEditable) {
+                val value = node.text?.toString()?.trim().orEmpty()
+                if (value.length in 2..240) {
+                    if (visibleText.isNotEmpty()) visibleText.append(' ')
+                    visibleText.append(value)
+                }
+            }
+            for (index in 0 until node.childCount) collect(node.getChild(index))
+        }
+        collect(root)
+        synchronized(observationLock) {
+            observationSequence += 1L
+            latestObservation = AccessibilityObservation(
+                sequence = observationSequence,
+                packageName = foregroundPackage,
+                className = className,
+                signal = signal,
+                visibleText = visibleText.toString().take(3500),
+                observedAtElapsed = SystemClock.elapsedRealtime()
+            )
+        }
+    }
+
+    fun captureObservation(): AccessibilityObservation = latestObservation
+
+    /** Waits off the main thread for a fresh event satisfying the action-specific condition. */
+    fun awaitActionVerification(
+        action: NovaAction,
+        target: String,
+        baseline: AccessibilityObservation,
+        timeoutMs: Long
+    ): StepVerification {
+        if (Thread.currentThread().name == "main") {
+            return StepVerification.failed("VERIFICATION_ON_MAIN_THREAD", "Accessibility verification must not block the UI thread.")
+        }
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs.coerceIn(500L, 12_000L)
+        while (SystemClock.elapsedRealtime() < deadline) {
+            if (PostActionVerifier.isVerified(action, target, baseline, latestObservation)) {
+                return StepVerification.verified(
+                    "ACCESSIBILITY_POSTCONDITION_VERIFIED",
+                    "The expected foreground UI condition was observed."
+                )
+            }
+            try {
+                Thread.sleep(50L)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return StepVerification.failed("VERIFICATION_INTERRUPTED", "Verification was interrupted; dependent steps were stopped.")
+            }
+        }
+        return StepVerification.failed(
+            "ACCESSIBILITY_TIMEOUT_${action.name}",
+            "Nova could not observe the expected screen condition before timeout; dependent steps were stopped."
+        )
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {

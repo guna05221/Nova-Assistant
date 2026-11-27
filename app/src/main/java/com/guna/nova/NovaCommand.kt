@@ -202,11 +202,12 @@ object NovaCommand {
         // Conversation-only plans remain responses and never reach Android APIs.
         val executablePlan = plan
         if (executablePlan != null && executablePlan.steps.any { it.proposal.action != NovaAction.CONVERSATION }) {
+            if (requestSequence.get() != requestId) return
+            val report = withContext(Dispatchers.IO) {
+                executeModelPlan(context, executablePlan, utterance)
+            }
             withContext(Dispatchers.Main) {
-                if (requestSequence.get() == requestId) {
-                    val report = executeModelPlan(context, executablePlan, utterance)
-                    say(context, report.summary)
-                }
+                if (requestSequence.get() == requestId) say(context, report.summary)
             }
             return
         }
@@ -302,8 +303,8 @@ object NovaCommand {
     }
 
     /**
-     * Only this trusted adapter can dispatch model-plan actions. Verification means
-     * the Android API accepted the operation; it does not imply remote app/network completion.
+     * Dispatches through trusted Android APIs, then waits for Accessibility evidence.
+     * API acceptance alone is never reported as a completed plan step.
      */
     private fun dispatchVerifiedModelStep(context: Context, step: PlanStep, originalRequest: String): StepVerification {
         val proposal = step.proposal
@@ -313,41 +314,61 @@ object NovaCommand {
             )
         ) return StepVerification.failed("PERMANENT_FINANCIAL_DENY", "Financial actions are permanently blocked.")
 
+        val accessibility = NovaAccessibilityService.instance
+            ?: return StepVerification.failed("ACCESSIBILITY_UNAVAILABLE", "Enable Nova Accessibility; the action was not attempted.")
+        val baseline = accessibility.captureObservation()
         val target = proposal.target.orEmpty()
+        var expectedPackage: String? = null
+
         val accepted = try {
             when (proposal.action) {
-                NovaAction.OPEN_APP -> target.isNotBlank() && openApp(context, target)
-                NovaAction.SEARCH, NovaAction.WEB_SEARCH -> target.isNotBlank() && search(context, target)
-                NovaAction.HOME -> {
-                    val service = NovaAccessibilityService.instance
-                    if (service != null) service.home() else {
-                        context.startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        true
-                    }
+                NovaAction.OPEN_APP -> {
+                    expectedPackage = resolveAppPackage(context, target)
+                    expectedPackage != null && openApp(context, target)
                 }
-                NovaAction.BACK -> NovaAccessibilityService.instance?.back() == true
+                NovaAction.SEARCH, NovaAction.WEB_SEARCH -> target.isNotBlank() && search(context, target)
+                NovaAction.HOME -> accessibility.home()
+                NovaAction.BACK -> accessibility.back()
                 NovaAction.SETTINGS -> {
+                    expectedPackage = "com.android.settings"
                     context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     true
                 }
-                NovaAction.SCROLL_UP -> NovaAccessibilityService.instance?.scroll(true) == true
-                NovaAction.SCROLL_DOWN -> NovaAccessibilityService.instance?.scroll(false) == true
+                NovaAction.SCROLL_UP -> accessibility.scroll(true)
+                NovaAction.SCROLL_DOWN -> accessibility.scroll(false)
                 NovaAction.FOOD_SEARCH -> FoodDiscovery.findNearby(context, target.ifBlank { "restaurants and food" })
                 NovaAction.SEARCH_SWIGGY -> FoodDiscovery.searchDeliveryApp(context, "Swiggy", target)
                 NovaAction.SEARCH_ZOMATO -> FoodDiscovery.searchDeliveryApp(context, "Zomato", target)
-                NovaAction.CONVERSATION -> false
                 else -> false
             }
         } catch (_: Exception) { false }
 
         if (!accepted) {
-            val reason = if (proposal.action == NovaAction.CONVERSATION) "NON_EXECUTABLE_CONVERSATION_STEP"
-                else "ANDROID_OPERATION_NOT_ACCEPTED"
-            return StepVerification.failed(reason, "Android did not accept this operation; the plan was stopped.")
+            return StepVerification.failed("ANDROID_DISPATCH_REJECTED", "Android did not accept the operation; dependent steps were stopped.")
         }
+
+        val verification = accessibility.awaitActionVerification(
+            action = proposal.action,
+            target = expectedPackage ?: target,
+            baseline = baseline,
+            timeoutMs = PostActionVerifier.timeoutMs(proposal.action)
+        )
+        if (!verification.verified) return verification
+
         remember(context, proposal.action.name, proposal.target)
-        return StepVerification.verified("ANDROID_API_ACCEPTED", "Android accepted the operation at its API boundary.")
+        return verification
+    }
+
+    private fun resolveAppPackage(context: Context, label: String): String? {
+        if (label.isBlank()) return null
+        val apps = context.packageManager.getInstalledApplications(0)
+        val query = label.lowercase(Locale.ROOT).trim()
+        val match = apps.firstOrNull {
+            context.packageManager.getApplicationLabel(it).toString().lowercase(Locale.ROOT) == query
+        } ?: apps.firstOrNull {
+            context.packageManager.getApplicationLabel(it).toString().lowercase(Locale.ROOT).contains(query)
+        }
+        return match?.packageName?.takeIf { context.packageManager.getLaunchIntentForPackage(it) != null }
     }
 
     private fun conversationHistory(context: Context, latest: String): org.json.JSONArray {
