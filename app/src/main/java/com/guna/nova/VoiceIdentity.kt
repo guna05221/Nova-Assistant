@@ -1,6 +1,7 @@
 package com.guna.nova
 
 import android.content.Context
+import android.util.Log
 import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractor
 import com.k2fsa.sherpa.onnx.SpeakerEmbeddingExtractorConfig
 import com.k2fsa.sherpa.onnx.OnlineStream
@@ -8,23 +9,47 @@ import org.json.JSONArray
 import kotlin.math.sqrt
 
 class VoiceIdentity(context: Context) {
+    companion object {
+        const val MODEL_ASSET = "3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx"
+
+        internal fun hasModelAsset(assetNames: Array<String>): Boolean =
+            assetNames.any { it == MODEL_ASSET }
+
+        internal fun requiresEnrollment(modelAvailable: Boolean, enrolled: Boolean): Boolean =
+            modelAvailable && !enrolled
+    }
+
     private val prefs = context.getSharedPreferences("nova_voice_identity", Context.MODE_PRIVATE)
-    private val extractor = SpeakerEmbeddingExtractor(
-        assetManager = context.assets,
-        config = SpeakerEmbeddingExtractorConfig(
-            model = "3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx",
-            numThreads = 2,
-            debug = false,
-            provider = "cpu"
-        )
-    )
+
+    // Sherpa's native asset loader terminates the process when this model is absent.
+    // Check the APK assets before entering JNI so speech recognition can still start safely.
+    private val extractor: SpeakerEmbeddingExtractor? =
+        if (hasModelAsset(context.assets.list("") ?: emptyArray())) {
+            SpeakerEmbeddingExtractor(
+                assetManager = context.assets,
+                config = SpeakerEmbeddingExtractorConfig(
+                    model = MODEL_ASSET,
+                    numThreads = 2,
+                    debug = false,
+                    provider = "cpu"
+                )
+            )
+        } else {
+            Log.w("NovaVoice", "Speaker verification model is not packaged: $MODEL_ASSET")
+            null
+        }
+
+    val isAvailable: Boolean
+        get() = extractor != null
 
     fun embedding(samples: FloatArray): FloatArray {
-        val stream: OnlineStream = extractor.createStream()
+        val activeExtractor = extractor
+            ?: throw IllegalStateException("Speaker verification model is unavailable: $MODEL_ASSET")
+        val stream: OnlineStream = activeExtractor.createStream()
         return try {
             stream.acceptWaveform(samples, 16000)
             stream.inputFinished()
-            extractor.compute(stream)
+            activeExtractor.compute(stream)
         } finally {
             stream.release()
         }
@@ -42,9 +67,10 @@ class VoiceIdentity(context: Context) {
         prefs.edit().putString("embedding", json.toString()).putBoolean("enrolled", true).apply()
     }
 
-    fun isEnrolled(): Boolean = prefs.getBoolean("enrolled", false)
+    fun isEnrolled(): Boolean = isAvailable && prefs.getBoolean("enrolled", false)
 
     fun matches(samples: FloatArray, threshold: Float = 0.55f): Boolean {
+        val activeExtractor = extractor ?: return false
         val raw = prefs.getString("embedding", null) ?: return false
         val savedJson = JSONArray(raw)
         val saved = FloatArray(savedJson.length()) { savedJson.getDouble(it).toFloat() }
@@ -63,5 +89,7 @@ class VoiceIdentity(context: Context) {
         return score >= threshold
     }
 
-    fun close() = extractor.release()
+    fun close() {
+        extractor?.release()
+    }
 }
