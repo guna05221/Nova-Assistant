@@ -171,7 +171,7 @@ class WakeWordService : Service() {
             RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
-            maxOf(minBuffer * 3, RATE * 2)
+            maxOf(minBuffer * 4, RATE * 2 * 4)
         )
         if (audio.state != AudioRecord.STATE_INITIALIZED) {
             audio.release()
