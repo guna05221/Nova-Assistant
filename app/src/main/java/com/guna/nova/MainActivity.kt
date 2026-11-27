@@ -96,7 +96,8 @@ class MainActivity : ComponentActivity() {
                                 )
                             )
                             .statusBarsPadding()
-                            .padding(horizontal = 20.dp, vertical = 18.dp),
+                            .padding(horizontal = 20.dp, vertical = 18.dp)
+                            .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(18.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -312,10 +313,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .verticalScroll(rememberScrollState()),
+                            modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
                         Text(
