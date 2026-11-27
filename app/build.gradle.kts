@@ -47,7 +47,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
-    implementation(files("libs/sherpa-onnx-2.0.1.aar"))
+    implementation(files("libs/sherpa-onnx-1.13.2.aar"))
+    implementation("org.apache.commons:commons-compress:1.27.1")
+    implementation("commons-io:commons-io:2.17.0")
     // On-device llama.cpp inference runtime (arm64-v8a, CPU/NEON).
     implementation("dev.ffmpegkit-maintained:llama-android:0.1.1")
     testImplementation("junit:junit:4.13.2")
