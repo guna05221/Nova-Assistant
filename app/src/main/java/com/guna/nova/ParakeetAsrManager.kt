@@ -177,7 +177,7 @@ object ParakeetAsrManager {
                     val entry = tar.nextTarEntry ?: break
                     // Tar archives may legitimately contain "." and "./folder" entries.
                     // Normalize those prefixes, but reject absolute paths and traversal.
-                    val rawName = entry.name.replace('\\\\', '/')
+                    val rawName = entry.name
                     if (rawName.startsWith("/") || Regex("^[A-Za-z]:").containsMatchIn(rawName)) {
                         error("Unsafe model archive entry")
                     }
