@@ -199,7 +199,8 @@ object ParakeetAsrManager {
 
             val prepared = File(root, "$MODEL_DIR_NAME.ready")
             prepared.deleteRecursively()
-            if (!modelRoot.copyRecursively(prepared, overwrite = true)) error("Could not prepare model files")
+            modelRoot.copyRecursively(prepared, overwrite = true)
+            if (!File(prepared, "encoder.int8.onnx").isFile) error("Could not prepare model files")
             target.deleteRecursively()
             if (!prepared.renameTo(target)) error("Could not activate downloaded model")
         } finally {
