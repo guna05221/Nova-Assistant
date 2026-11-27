@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - phase1/brain-foundation
+      - feature/parakeet-unified-asr
   workflow_dispatch:
 
 permissions:
@@ -11,7 +12,7 @@ permissions:
 
 jobs:
   build-apk:
-    name: Validate, compile, and package debug APK
+    name: Validate, compile, sign, and package debug APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
@@ -34,8 +35,6 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
           test -x "$SDKMANAGER"
-          # sdkmanager closes the input pipe after accepting all licenses; avoid
-          # treating the resulting harmless yes(1) SIGPIPE as a pipeline failure.
           set +o pipefail
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses
           set -o pipefail
@@ -63,27 +62,34 @@ jobs:
             echo "NOVA_KEY_PASSWORD=$NOVA_KEY_PASSWORD"
           } >> "$GITHUB_ENV"
 
-      - name: Download Sherpa ONNX dependency
+      - name: Download Sherpa ONNX compile dependency
         run: |
           set -euo pipefail
           mkdir -p app/libs
-          curl -fL --retry 3 "https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-2.0.1.aar" -o app/libs/sherpa-onnx-2.0.1.aar
-          test -s app/libs/sherpa-onnx-2.0.1.aar
+          curl -fL --retry 3 "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.2/sherpa-onnx-1.13.2.aar" -o app/libs/sherpa-onnx-1.13.2.aar
+          test -s app/libs/sherpa-onnx-1.13.2.aar
 
-      - name: Run unit tests and build debug APK
+      - name: Run unit tests and build signed debug APK
         run: gradle --no-daemon testDebugUnitTest assembleDebug
 
       - name: Verify APK signing certificate
         run: |
           set -euo pipefail
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          "$APKSIGNER" verify --verbose app/build/outputs/apk/debug/app-debug.apk
-          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$APKSIGNER" verify --verbose "$APK"
+          "$APKSIGNER" verify --print-certs "$APK"
+
+      - name: Record APK checksum
+        run: sha256sum app/build/outputs/apk/debug/app-debug.apk | tee apk-sha256.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nova-debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: Nova-Parakeet-debug-APK
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            apk-sha256.txt
           if-no-files-found: error
           retention-days: 14
