@@ -175,7 +175,7 @@ object ParakeetAsrManager {
             TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(FileInputStream(archive)))).use { tar ->
                 while (true) {
                     val entry = tar.nextTarEntry ?: break
-                    val name = entry.name.replace('\\', '/')
+                    val name = entry.name
                     if (name.startsWith("/") || name.split('/').any { it == ".." }) {
                         error("Unsafe model archive entry")
                     }
