@@ -115,9 +115,9 @@ object AIProviderManager {
         val geminiKey = get(context, GEMINI)
         if (geminiKey.isNotBlank()) {
             try {
-                val parts = JSONArray().put(JSONObject().put("text", systemPrompt + "\nUser said: " + userText.take(1200) + "\nReturn one JSON action."))
+                val parts = JSONArray().put(JSONObject().put("text", systemPrompt + "\nUser said: " + userText.take(1200) + "\nReturn one JSON plan."))
                 val body = JSONObject().put("contents", JSONArray().put(JSONObject().put("parts", parts)))
-                    .put("generationConfig", JSONObject().put("temperature", 0.1).put("maxOutputTokens", 220))
+                    .put("generationConfig", JSONObject().put("temperature", 0.1).put("maxOutputTokens", 420))
                 val response = request(context, "https://generativelanguage.googleapis.com/v1beta/models/$GEMINI_MODEL:generateContent",
                     "x-goog-api-key", geminiKey, body.toString())
                 if (response.first in 200..299) {
@@ -134,10 +134,10 @@ object AIProviderManager {
         val groqKey = get(context, GROQ)
         if (groqKey.isNotBlank()) {
             return try {
-                val body = JSONObject().put("model", GROQ_MODEL).put("temperature", 0.1).put("max_tokens", 220)
+                val body = JSONObject().put("model", GROQ_MODEL).put("temperature", 0.1).put("max_tokens", 420)
                     .put("messages", JSONArray()
                         .put(JSONObject().put("role", "system").put("content", systemPrompt))
-                        .put(JSONObject().put("role", "user").put("content", userText.take(1200) + "\nReturn one JSON action.")))
+                        .put(JSONObject().put("role", "user").put("content", userText.take(1200) + "\nReturn one JSON plan.")))
                 val response = request(context, "https://api.groq.com/openai/v1/chat/completions",
                     "Authorization", "Bearer $groqKey", body.toString())
                 if (response.first in 200..299) {

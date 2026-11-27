@@ -127,40 +127,36 @@ object NovaCommand {
             it.role + ": " + it.content
         }.takeLast(1800)
         val plannerPrompt = """
-            You are Nova, a safe Android voice assistant. Understand English, Tamil and Tanglish.
-            The user input includes recent conversation context and the current request. Use prior turns
-            to resolve follow-ups such as "why", "that one", "tell me more" and "do it again".
-            Infer the current user's intent and return exactly one JSON object:
-            {"action":"ACTION","target":"","reply":""}
-            Allowed actions:
+            You are Nova, a safe Android assistant and structured planning engine.
+            Understand English, Tamil and Tanglish. Resolve follow-ups from the supplied context,
+            but plan only for the current request. Return exactly this JSON schema:
+            {"steps":[{"id":"step-1","action":"ACTION","target":"","reply":"","depends_on":[]}]}
+            Return one step for one action or up to three steps for a genuinely multi-step request.
+            Dependencies must reference earlier step IDs only. Use only these actions:
             OPEN_APP, SEARCH, WEB_SEARCH, HOME, BACK, SETTINGS, SCROLL_UP, SCROLL_DOWN,
             FOOD_SEARCH, SEARCH_SWIGGY, SEARCH_ZOMATO, CONVERSATION, UNSUPPORTED.
-            Use CONVERSATION for ordinary questions, explanations, calculations, jokes and casual chat.
-            For CONVERSATION, return an empty reply string. The conversation engine generates
-            the spoken answer separately using the full conversation history.
-            Use OPEN_APP only when the user clearly asks to open an installed app.
-            Use SEARCH or WEB_SEARCH only when the user clearly asks to search.
-            Use FOOD_SEARCH for requests to find food or nearby restaurants.
-            Use SEARCH_SWIGGY or SEARCH_ZOMATO only when the user names that service.
-            Never propose SEND, TYPE_TEXT, payments, transfers, purchases, subscriptions, recharges,
-            orders, deletion, publishing, security changes, calls or unsupported actions.
-            Never claim that an action has already happened. Do not invent live search results.
-            Preserve the user's language in the reply where practical. Ask one short question if essential
-            information is missing. Return JSON only, without markdown.
+            CONVERSATION is for ordinary questions, explanations, calculations, jokes and casual chat.
+            Never propose sending/typing messages, payments, transfers, purchases, subscriptions,
+            recharges, orders, deletion, publishing, calls, security changes or unsupported operations.
+            Food discovery and Swiggy/Zomato search are search-only, never ordering.
+            Require a target for app/search actions. Use empty strings for unused target/reply fields.
+            Never claim an action has happened or invent live results. If essential information is
+            missing, use one CONVERSATION step to ask a concise question. Return JSON only.
         """.trimIndent()
 
         // Always ask the on-device Qwen model first. A saved key never changes this order.
-        var proposal: IntentProposal? = null
+        var plan: BrainPlan? = null
         if (localAvailable) {
-            val localPlan = LocalAiManager.interpret(context, plannerContext)
-            if (!localPlan.isNullOrBlank()) {
-                proposal = BrainContractParser.parseIntent(localPlan, ProposalSource.LOCAL_MODEL)
+            val localOutput = LocalAiManager.interpret(context, plannerContext)
+            if (!localOutput.isNullOrBlank()) {
+                plan = BrainPlanParser.parse(localOutput, ProposalSource.LOCAL_MODEL)
+                    ?: BrainContractParser.parseIntent(localOutput, ProposalSource.LOCAL_MODEL)?.let { BrainPlan.single(it) }
             }
         }
 
         // Cloud planning is a fallback only after local inference is unavailable or unusable,
         // and only when the separate explicit-consent gate and a configured provider both pass.
-        if (proposal == null && AiRoutingPolicy.shouldAttemptCloudFallback(
+        if (plan == null && AiRoutingPolicy.shouldAttemptCloudFallback(
                 localSucceeded = false,
                 consentEnabled = AIProviderManager.isCloudEnabled(context),
                 providerConfigured = AIProviderManager.hasGemini(context) || AIProviderManager.hasGroq(context)
@@ -168,19 +164,20 @@ object NovaCommand {
         ) {
             if (requestSequence.get() != requestId) return
             val planned = AIProviderManager.plan(context, plannerPrompt, cloudPlannerContext)
-            if (planned.ok) proposal = BrainContractParser.parseIntent(planned.message, ProposalSource.CLOUD_MODEL)
+            if (planned.ok) {
+                plan = BrainPlanParser.parse(planned.message, ProposalSource.CLOUD_MODEL)
+                    ?: BrainContractParser.parseIntent(planned.message, ProposalSource.CLOUD_MODEL)?.let { BrainPlan.single(it) }
+            }
         }
 
         if (requestSequence.get() != requestId) return
 
-        val plan = proposal?.let { BrainPlan.single(it) }
-        val step = plan?.steps?.singleOrNull()
-        val decision = step?.let { BrainPolicy.evaluate(it, utterance) }
-
-        if (decision?.outcome == PolicyOutcome.DENY) {
+        val decisions = plan?.let { BrainPolicy.evaluatePlan(it, utterance) }.orEmpty()
+        val denied = decisions.firstOrNull { it.outcome == PolicyOutcome.DENY }
+        if (denied != null) {
             withContext(Dispatchers.Main) {
                 if (requestSequence.get() == requestId) {
-                    val message = if (decision.reasonCode == "PERMANENT_FINANCIAL_DENY")
+                    val message = if (denied.reasonCode == "PERMANENT_FINANCIAL_DENY")
                         "I can explain financial topics, but Nova permanently blocks financial transactions and paid orders."
                     else "That proposed action is not permitted."
                     say(context, message)
@@ -188,6 +185,56 @@ object NovaCommand {
             }
             return
         }
+
+        val clarificationDecision = decisions.firstOrNull { it.outcome == PolicyOutcome.CLARIFY }
+        if (clarificationDecision != null) {
+            val clarification = if (clarificationDecision.reasonCode == "MISSING_ACTION_TARGET")
+                "What should I use as the search or app target?"
+            else "I couldn't safely interpret one part of that request. Could you clarify what you want?"
+            saveConversation(context, utterance, clarification)
+            withContext(Dispatchers.Main) {
+                if (requestSequence.get() == requestId) say(context, clarification)
+            }
+            return
+        }
+
+        // Multi-step proposals are review-only until a later executor can verify each
+        // result before starting dependent steps. No proposed step is dispatched here.
+        val multiStepPlan = plan
+        if (multiStepPlan != null && multiStepPlan.steps.size > 1) {
+            val summary = buildString {
+                append("I prepared this plan, but multi-step execution is not enabled yet. Nothing has been executed:\n")
+                multiStepPlan.steps.forEachIndexed { index, planStep ->
+                    val actionLabel = when (planStep.proposal.action) {
+                        NovaAction.OPEN_APP -> "Open"
+                        NovaAction.SEARCH, NovaAction.WEB_SEARCH -> "Search for"
+                        NovaAction.FOOD_SEARCH -> "Find food:"
+                        NovaAction.SEARCH_SWIGGY -> "Search Swiggy for"
+                        NovaAction.SEARCH_ZOMATO -> "Search Zomato for"
+                        NovaAction.HOME -> "Go Home"
+                        NovaAction.BACK -> "Go Back"
+                        NovaAction.SETTINGS -> "Open Settings"
+                        NovaAction.SCROLL_UP -> "Scroll up"
+                        NovaAction.SCROLL_DOWN -> "Scroll down"
+                        NovaAction.CONVERSATION -> "Respond to the question"
+                        else -> "Review"
+                    }
+                    append(index + 1).append(". ").append(actionLabel)
+                    planStep.proposal.target?.let { append(" ").append(it) }
+                    if (planStep.dependsOn.isNotEmpty()) append(" (after ").append(planStep.dependsOn.joinToString()).append(")")
+                    append("\n")
+                }
+            }.trim()
+            saveConversation(context, utterance, summary)
+            withContext(Dispatchers.Main) {
+                if (requestSequence.get() == requestId) say(context, summary)
+            }
+            return
+        }
+
+        val step = plan?.steps?.singleOrNull()
+        val decision = decisions.singleOrNull()
+        val proposal = step?.proposal
 
         if (step != null && decision?.outcome == PolicyOutcome.ALLOW &&
             step.proposal.action != NovaAction.CONVERSATION
@@ -201,13 +248,12 @@ object NovaCommand {
             return
         }
 
-        val hasPlannerReply = proposal?.action == NovaAction.CONVERSATION && !proposal?.reply.isNullOrBlank()
+        val hasPlannerReply = proposal?.action == NovaAction.CONVERSATION && !proposal.reply.isNullOrBlank()
         val localAnswer = if (!hasPlannerReply && localAvailable) {
             LocalAiManager.chat(context, conversation.localPrompt)
         } else null
         val answer = when {
-            proposal?.action == NovaAction.CONVERSATION && !proposal?.reply.isNullOrBlank() ->
-                proposal?.reply
+            proposal?.action == NovaAction.CONVERSATION && !proposal.reply.isNullOrBlank() -> proposal.reply
             !localAnswer.isNullOrBlank() -> localAnswer
             AiRoutingPolicy.shouldAttemptCloudFallback(
                 localSucceeded = false,
