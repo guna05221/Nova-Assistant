@@ -57,14 +57,22 @@ class MainActivity : ComponentActivity() {
         setContent {
             var running by remember { mutableStateOf(false) }
             var status by remember { mutableStateOf("Ready when you are") }
+            var liveTranscript by remember { mutableStateOf("") }
+            var finalTranscript by remember { mutableStateOf("") }
+            var asrEngine by remember { mutableStateOf("Parakeet Unified EN 0.6B · local") }
             val localAi by LocalAiManager.state.collectAsState()
+            val asrState by ParakeetAsrManager.state.collectAsState()
 
             LaunchedEffect(Unit) {
                 LocalAiManager.loadIfPresent(this@MainActivity)
+                ParakeetAsrManager.loadIfInstalled(this@MainActivity)
                 while (true) {
                     val prefs = getSharedPreferences("nova_diagnostics", MODE_PRIVATE)
                     status = prefs.getString("status", "Ready when you are") ?: "Ready when you are"
                     running = prefs.getBoolean("running", false)
+                    liveTranscript = prefs.getString("liveTranscript", "") ?: ""
+                    finalTranscript = prefs.getString("finalTranscript", "") ?: ""
+                    asrEngine = prefs.getString("asrEngine", "Parakeet Unified EN 0.6B · local") ?: "Parakeet Unified EN 0.6B · local"
                     delay(500)
                 }
             }
@@ -236,6 +244,67 @@ class MainActivity : ComponentActivity() {
                                 Spacer(Modifier.height(8.dp))
                                 Text(
                                     "Speech recognition supports Tamil and English language switching where your phone provider has the models. Tanglish support can vary.",
+                                    color = NovaMuted,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = NovaPanel.copy(alpha = 0.98f)),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(9.dp)
+                            ) {
+                                Text("LOCAL VOICE RECOGNITION", color = NovaMint, fontWeight = FontWeight.Bold)
+                                Text("Parakeet Unified EN 0.6B · INT8", color = Color.White, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    asrState.status,
+                                    color = NovaMuted,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                if (asrState.downloading || asrState.progress > 0f) {
+                                    LinearProgressIndicator(
+                                        progress = asrState.progress,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = NovaMint
+                                    )
+                                }
+                                Button(
+                                    onClick = { ParakeetAsrManager.download(this@MainActivity) },
+                                    enabled = !asrState.downloading && !asrState.ready,
+                                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                                    shape = RoundedCornerShape(14.dp)
+                                ) {
+                                    Text(
+                                        when {
+                                            asrState.ready -> "Parakeet voice model ready"
+                                            asrState.downloading -> "Downloading voice model…"
+                                            ParakeetAsrManager.isInstalled(this@MainActivity) -> "Load Parakeet model"
+                                            else -> "Download Parakeet model (about 630 MB)"
+                                        },
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text("Recognition engine: $asrEngine", color = NovaMuted, style = MaterialTheme.typography.labelSmall)
+                                Text("LIVE TRANSCRIPT", color = NovaMint, fontWeight = FontWeight.Bold)
+                                Text(
+                                    liveTranscript.ifBlank { if (running) "Speak now — Nova will show what it hears here." else "Start listening to test your voice." },
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Divider(color = Color(0xFF34405C))
+                                Text("LAST FINAL TRANSCRIPT", color = NovaMuted, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    finalTranscript.ifBlank { "Your completed sentence will appear here." },
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    "This Parakeet export uses simulated streaming: interim text is refreshed by decoding audio snapshots, then finalized after a pause.",
                                     color = NovaMuted,
                                     style = MaterialTheme.typography.bodySmall
                                 )
