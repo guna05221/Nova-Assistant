@@ -175,16 +175,22 @@ object ParakeetAsrManager {
             TarArchiveInputStream(BZip2CompressorInputStream(BufferedInputStream(FileInputStream(archive)))).use { tar ->
                 while (true) {
                     val entry = tar.nextTarEntry ?: break
-                    val name = entry.name
-                    if (name.startsWith("/") || name.split('/').any { it == ".." }) {
+                    // Tar archives may legitimately contain "." and "./folder" entries.
+                    // Normalize those prefixes, but reject absolute paths and traversal.
+                    val rawName = entry.name.replace('\\\\', '/')
+                    if (rawName.startsWith("/") || Regex("^[A-Za-z]:").containsMatchIn(rawName)) {
                         error("Unsafe model archive entry")
                     }
-                    val output = File(staging, name.substringAfter('/', name))
-                    if (!output.canonicalPath.startsWith(staging.canonicalPath + File.separator)) {
-                        error("Unsafe model archive path")
-                    }
+                    val segments = rawName.split('/').filter { it.isNotEmpty() && it != "." }
+                    if (segments.any { it == ".." }) error("Unsafe model archive entry")
+                    if (segments.isEmpty()) continue
+                    val relativeName = segments.joinToString(File.separator)
+                    val output = File(staging, relativeName)
+                    val stagingPath = staging.canonicalFile.toPath()
+                    val outputPath = output.canonicalFile.toPath()
+                    if (!outputPath.startsWith(stagingPath)) error("Unsafe model archive path")
                     if (entry.isDirectory) {
-                        output.mkdirs()
+                        if (!output.exists() && !output.mkdirs()) error("Cannot create model folder")
                     } else {
                         output.parentFile?.mkdirs()
                         FileOutputStream(output).use { tar.copyTo(it) }
