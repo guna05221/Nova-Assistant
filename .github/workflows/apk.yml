@@ -41,6 +41,28 @@ jobs:
           set -o pipefail
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
+      - name: Configure persistent Nova signing
+        env:
+          NOVA_KEYSTORE_BASE64: ${{ secrets.NOVA_KEYSTORE_BASE64 }}
+          NOVA_KEYSTORE_PASSWORD: ${{ secrets.NOVA_KEYSTORE_PASSWORD }}
+          NOVA_KEY_ALIAS: ${{ secrets.NOVA_KEY_ALIAS }}
+          NOVA_KEY_PASSWORD: ${{ secrets.NOVA_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$NOVA_KEYSTORE_BASE64"
+          test -n "$NOVA_KEYSTORE_PASSWORD"
+          test -n "$NOVA_KEY_ALIAS"
+          test -n "$NOVA_KEY_PASSWORD"
+          KEYSTORE_PATH="$RUNNER_TEMP/nova-release.jks"
+          printf '%s' "$NOVA_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          {
+            echo "NOVA_KEYSTORE_FILE=$KEYSTORE_PATH"
+            echo "NOVA_KEYSTORE_PASSWORD=$NOVA_KEYSTORE_PASSWORD"
+            echo "NOVA_KEY_ALIAS=$NOVA_KEY_ALIAS"
+            echo "NOVA_KEY_PASSWORD=$NOVA_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
       - name: Download Sherpa ONNX dependency
         run: |
           set -euo pipefail
@@ -50,6 +72,13 @@ jobs:
 
       - name: Run unit tests and build debug APK
         run: gradle --no-daemon testDebugUnitTest assembleDebug
+
+      - name: Verify APK signing certificate
+        run: |
+          set -euo pipefail
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$APKSIGNER" verify --verbose app/build/outputs/apk/debug/app-debug.apk
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
