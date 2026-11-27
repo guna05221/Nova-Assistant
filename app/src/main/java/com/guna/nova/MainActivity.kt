@@ -271,7 +271,8 @@ private fun VoiceTestingPage(
 }
 
 @Composable
-private fun AiTestingPage(localAi: LocalAiManager.State) {
+private fun AiTestingPage(localAi: LocalAiManager.UiState) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Card(colors = CardDefaults.cardColors(containerColor = NovaPanel),
@@ -284,12 +285,12 @@ private fun AiTestingPage(localAi: LocalAiManager.State) {
                 if (localAi.downloading || localAi.progress > 0f) {
                     LinearProgressIndicator(progress = localAi.progress, modifier = Modifier.fillMaxWidth())
                 }
-                Button(onClick = { LocalAiManager.downloadAndLoad(androidx.compose.ui.platform.LocalContext.current) },
+                Button(onClick = { LocalAiManager.downloadAndLoad(context) },
                     enabled = !localAi.downloading && !localAi.ready, modifier = Modifier.fillMaxWidth()) {
                     Text(when {
                         localAi.ready -> "Local AI ready"
                         localAi.downloading -> "Downloading / loading…"
-                        LocalAiManager.isDownloaded(androidx.compose.ui.platform.LocalContext.current) -> "Load local AI"
+                        LocalAiManager.isDownloaded(context) -> "Load local AI"
                         else -> "Download & activate local AI"
                     })
                 }
