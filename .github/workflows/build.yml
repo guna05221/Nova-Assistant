@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - phase1/brain-foundation
+      - validation/voice-identity-crashfix
   workflow_dispatch:
 
 permissions:
