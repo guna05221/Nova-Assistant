@@ -72,12 +72,26 @@ class WakeWordService : Service() {
         active = true
         getSharedPreferences("nova_diagnostics", MODE_PRIVATE).edit()
             .putBoolean("running", true).putString("status", "Starting microphone…").apply()
-        if (intent?.action == ACTION_ENROLL) Thread({ enrollVoice() }, "NovaEnrollment").start()
-        else if (identity?.isEnrolled() != true) {
+
+        val voiceIdentity = identity
+        if (intent?.action == ACTION_ENROLL) {
+            if (voiceIdentity?.isAvailable != true) {
+                report("Voice enrollment unavailable: the local speaker-verification model is missing.", false)
+                active = false
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            Thread({ enrollVoice() }, "NovaEnrollment").start()
+        } else if (VoiceIdentity.requiresEnrollment(
+                modelAvailable = voiceIdentity?.isAvailable == true,
+                enrolled = voiceIdentity?.isEnrolled() == true
+            )) {
             report("Set up your voice profile first. Speaker verification is separate from speech recognition.", false)
             active = false
             stopSelf()
-        } else startSpeechRecognition()
+        } else {
+            startSpeechRecognition()
+        }
         return START_NOT_STICKY
     }
 
@@ -123,7 +137,15 @@ class WakeWordService : Service() {
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
             else SpeechRecognizer.createSpeechRecognizer(this)
             recognizer?.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) { recognitionActive = true; report("Listening for Tamil, English and Tanglish. Speak naturally.") }
+                override fun onReadyForSpeech(params: Bundle?) {
+                    recognitionActive = true
+                    val status = if (identity?.isAvailable == true) {
+                        "Listening for Tamil, English and Tanglish. Speak naturally."
+                    } else {
+                        "Listening for Tamil, English and Tanglish. Speaker verification is unavailable because its local model is missing."
+                    }
+                    report(status)
+                }
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
